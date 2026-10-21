@@ -73,3 +73,13 @@ QLabel#noticeLabel {
     color: palette(window-text);
     padding: 4px 0;
 }
+
+QFrame#graphPanel {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    background: palette(window);
+}
+
+QFrame#graphPanel[selected="true"] {
+    border: 2px solid palette(highlight);
+}

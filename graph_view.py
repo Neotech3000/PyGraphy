@@ -1,8 +1,11 @@
 """One graph series, plus record playback.
 
-Line, scatter, bar, and histogram use PyQtGraph. PyQtGraph has no real pie
-chart, and PyQt6.QtCharts is not installed here, so the donut is drawn
-with QPainter in DonutChart.
+Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.
+PyQtGraph has no real pie chart, and PyQt6.QtCharts is not installed here,
+so the donut is drawn with QPainter in DonutChart.
+
+GraphBoard lays several GraphPanel widgets in a grid. Each panel owns its
+own rows and its own QTimer. One panel's playback does not move another.
 """
 
 import pyqtgraph as pg
@@ -13,9 +16,13 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStackedWidget,
@@ -37,7 +44,30 @@ from dataset import (
 
 pg.setConfigOption("antialias", True)
 
-KIND_PAGE = {"line": 0, "scatter": 0, "histogram": 1, "bar": 2, "pie": 3}
+# Area and step use the same X/Y boxes as line and scatter.
+# Horizontal bar uses the same category boxes as bar.
+KIND_PAGE = {
+    "line": 0,
+    "scatter": 0,
+    "area": 0,
+    "step": 0,
+    "histogram": 1,
+    "bar": 2,
+    "hbar": 2,
+    "pie": 3,
+}
+# None means "use the desktop palette." The other entries are named
+# choices for this one panel's marker or revealed line.
+LOOK_COLORS = (
+    ("Theme", "theme"),
+    ("Red", QColor(Qt.GlobalColor.red)),
+    ("Blue", QColor(Qt.GlobalColor.blue)),
+    ("Green", QColor(Qt.GlobalColor.darkGreen)),
+    ("Orange", QColor(Qt.GlobalColor.darkYellow)),
+    ("Yellow", QColor(Qt.GlobalColor.yellow)),
+)
+LINE_KINDS = ("line", "area", "step")
+XY_KINDS = ("line", "scatter", "area", "step")
 # About 30 frames a second. Each frame moves a fraction of a row, then returns.
 PLAYBACK_FRAME_MS = 33
 PLAYBACK_ROWS_PER_SECOND = 2.0
@@ -169,11 +199,26 @@ class DonutChart(QWidget):
         painter.end()
 
 
-class GraphPanel(QWidget):
-    """Controls and one plot. Playback reuses the same plot items."""
+class GraphPanel(QFrame):
+    """One comparison graph: its own rows, type, columns, and timer.
 
-    def __init__(self):
+    The plot items are created once in __init__ and reused. Playback
+    never builds a new line or bar, and it never sleeps.
+    """
+
+    import_requested = pyqtSignal(object)
+    remove_requested = pyqtSignal(object)
+    select_requested = pyqtSignal(object)
+    panel_changed = pyqtSignal(object)
+
+    def __init__(self, name):
         super().__init__()
+        self.name = name
+        self.tab = None
+        self.setObjectName("graphPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setMinimumWidth(280)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._dataset = None
         self._kind = "line"
         self._grid = True
@@ -181,6 +226,10 @@ class GraphPanel(QWidget):
         self._reveal = 0.0
         self._painted_whole = -1
         self._column_signature = None
+        self._play_style = "reveal"
+        self._marker_size = 16
+        self._marker_color = None
+        self._reveal_color = None
 
         self.option_stack = QStackedWidget()
         self.option_stack.addWidget(self._build_xy_page())
@@ -201,21 +250,25 @@ class GraphPanel(QWidget):
         self.grid_check.toggled.connect(self._grid_toggled)
 
         self.note_label = QLabel(
-            "No rows yet. Next: type them in Manual entry, load a table, "
-            "or capture serial data in Microcontroller mode."
+            "No rows on this graph yet. Next: press Import table on this graph. "
+            "Other graphs keep their own rows."
         )
         self.note_label.setWordWrap(True)
 
         self.plot = pg.PlotWidget()
-        self.plot.setMinimumHeight(200)
+        self.plot.setMinimumHeight(150)
         self.plot.showGrid(x=True, y=True, alpha=0.25)
         self.line_item = self.plot.plot([], [], pen=pg.mkPen(width=2))
+        self.full_line_item = self.plot.plot([], [], pen=pg.mkPen(width=2))
         self.scatter_item = pg.ScatterPlotItem(size=9)
         self.bar_item = pg.BarGraphItem(x=[], height=[], width=0.8)
+        self.hbar_item = pg.BarGraphItem(y=[0], x0=[0], width=[0], height=0.6)
         self.marker_item = pg.ScatterPlotItem(size=16, symbol="o")
         self.plot.addItem(self.scatter_item)
         self.plot.addItem(self.bar_item)
+        self.plot.addItem(self.hbar_item)
         self.plot.addItem(self.marker_item)
+        self.hbar_item.setVisible(False)
         self.donut = DonutChart()
 
         self.chart_stack = QStackedWidget()
@@ -231,9 +284,12 @@ class GraphPanel(QWidget):
         stats_row.addWidget(self.stats_column, stretch=1)
 
         self._build_playback()
+        self._build_header()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        layout.addLayout(self._header)
         layout.addWidget(self.option_stack)
         layout.addLayout(self.label_form)
         layout.addWidget(self.grid_check)
@@ -241,11 +297,94 @@ class GraphPanel(QWidget):
         layout.addWidget(self.chart_stack, stretch=1)
         layout.addLayout(stats_row)
         layout.addWidget(self.stats_label)
+        layout.addWidget(self.playback_box)
+        layout.addLayout(self._look_row)
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._advance)
         self._show_kind_page()
+        self.set_selected(False)
         self.apply_plot_palette()
+
+    def _build_header(self):
+        """Name, graph type, import, and remove. These belong to this panel only."""
+        self.name_label = QLabel(self.name)
+        self.name_label.setObjectName("sectionLabel")
+        self.selected_label = QLabel("Selected")
+        self.selected_label.setObjectName("pageHint")
+        self.type_combo = QComboBox()
+        self.type_combo.setObjectName("graphType")
+        for kind, label in (
+            ("line", "Line"),
+            ("scatter", "Scatter"),
+            ("area", "Area"),
+            ("step", "Step"),
+            ("bar", "Bar"),
+            ("hbar", "Horizontal bar"),
+            ("histogram", "Histogram"),
+            ("pie", "Pie or donut"),
+        ):
+            self.type_combo.addItem(label, kind)
+        self.type_combo.currentIndexChanged.connect(self._type_changed)
+        import_button = QPushButton("Import table")
+        import_button.setObjectName("importTable")
+        import_button.setToolTip("Load a csv, xlsx, or ods file into this graph only.")
+        import_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        import_button.clicked.connect(lambda: self.import_requested.emit(self))
+        remove_button = QPushButton("Remove")
+        remove_button.setObjectName("removeGraph")
+        remove_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        remove_button.clicked.connect(lambda: self.remove_requested.emit(self))
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_row.addWidget(self.name_label)
+        title_row.addWidget(self.selected_label)
+        title_row.addStretch(1)
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+        button_row.addWidget(import_button, stretch=1)
+        button_row.addWidget(remove_button, stretch=1)
+        type_row = QHBoxLayout()
+        type_row.setSpacing(8)
+        type_row.addWidget(QLabel("Graph type"))
+        type_row.addWidget(self.type_combo, stretch=1)
+        self._header = QVBoxLayout()
+        self._header.setSpacing(6)
+        self._header.addLayout(title_row)
+        self._header.addLayout(button_row)
+        self._header.addLayout(type_row)
+
+    def kind(self):
+        return self._kind
+
+    def set_name(self, name):
+        self.name = name
+        self.name_label.setText(name)
+
+    def set_selected(self, selected):
+        self.selected_label.setVisible(bool(selected))
+        self.setProperty("selected", bool(selected))
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+
+    def attach_tab(self, tab):
+        """Remember the table that shows this panel's rows."""
+        self.tab = tab
+
+    def mousePressEvent(self, event):
+        self.select_requested.emit(self)
+        super().mousePressEvent(event)
+
+    def _type_changed(self, _index):
+        kind = self.type_combo.currentData()
+        if not kind or kind == self._kind:
+            return
+        self._kind = kind
+        self._show_kind_page()
+        self._redraw()
+        self.panel_changed.emit(self)
 
     def _line_edit(self, callback):
         from PyQt6.QtWidgets import QLineEdit
@@ -345,6 +484,36 @@ class GraphPanel(QWidget):
         row.addWidget(self.speed_combo)
         row.addWidget(self.playback_label)
 
+        self.marker_size_spin = QSpinBox()
+        self.marker_size_spin.setRange(4, 48)
+        self.marker_size_spin.setValue(self._marker_size)
+        self.marker_size_spin.setPrefix("")
+        self.marker_size_spin.valueChanged.connect(self._marker_size_changed)
+        self.marker_color_combo = QComboBox()
+        self.reveal_color_combo = QComboBox()
+        for combo in (self.marker_color_combo, self.reveal_color_combo):
+            for label, color in LOOK_COLORS:
+                combo.addItem(label, color)
+        self.marker_color_combo.currentIndexChanged.connect(self._look_changed)
+        self.reveal_color_combo.currentIndexChanged.connect(self._look_changed)
+        self.play_style_combo = QComboBox()
+        self.play_style_combo.setObjectName("playbackLook")
+        self.play_style_combo.addItem("Reveal the line", "reveal")
+        self.play_style_combo.addItem("Marker on the full line", "marker")
+        self.play_style_combo.currentIndexChanged.connect(self._look_changed)
+
+        self._look_row = QHBoxLayout()
+        self._look_row.setSpacing(8)
+        self._look_row.addWidget(QLabel("Marker size"))
+        self._look_row.addWidget(self.marker_size_spin)
+        self._look_row.addWidget(QLabel("Marker color"))
+        self._look_row.addWidget(self.marker_color_combo)
+        self._look_row.addWidget(QLabel("Playback"))
+        self._look_row.addWidget(self.play_style_combo)
+        self._look_row.addWidget(QLabel("Revealed color"))
+        self._look_row.addWidget(self.reveal_color_combo)
+        self._look_row.addStretch(1)
+
     def bound_dataset(self):
         return self._dataset
 
@@ -364,9 +533,47 @@ class GraphPanel(QWidget):
         self._redraw()
 
     def set_kind(self, kind):
+        """Change this panel's graph type. Other panels are not updated."""
+        if kind not in KIND_PAGE:
+            return
         self._kind = kind
+        index = self.type_combo.findData(kind)
+        if index >= 0:
+            self.type_combo.blockSignals(True)
+            self.type_combo.setCurrentIndex(index)
+            self.type_combo.blockSignals(False)
         self._show_kind_page()
         self._redraw()
+
+    def _marker_size_changed(self, value):
+        self._marker_size = int(value)
+        self.marker_item.setSize(self._marker_size)
+        if self._playing:
+            self._paint_smooth()
+        else:
+            self._redraw()
+
+    def _look_changed(self, _index):
+        self._play_style = self.play_style_combo.currentData() or "reveal"
+        self._marker_color = self.marker_color_combo.currentData()
+        self._reveal_color = self.reveal_color_combo.currentData()
+        if self._playing:
+            self._paint_smooth()
+        else:
+            self._redraw()
+
+    def _series_color(self):
+        return _role_color(QPalette.ColorRole.Highlight)
+
+    def _marker_qcolor(self):
+        if not isinstance(self._marker_color, QColor):
+            return _role_color(QPalette.ColorRole.Accent)
+        return self._marker_color
+
+    def _revealed_qcolor(self):
+        if not isinstance(self._reveal_color, QColor):
+            return _role_color(QPalette.ColorRole.Highlight)
+        return self._reveal_color
 
     def set_grid(self, enabled):
         self._grid = enabled
@@ -576,6 +783,7 @@ class GraphPanel(QWidget):
     def _grid_toggled(self, checked):
         self._grid = checked
         self._redraw()
+        self.panel_changed.emit(self)
 
     def _show_kind_page(self):
         self.option_stack.setCurrentIndex(KIND_PAGE.get(self._kind, 0))
@@ -635,30 +843,39 @@ class GraphPanel(QWidget):
         title_text = getattr(title, "text", None)
         if isinstance(title_text, str) and title_text:
             title.setText(title_text, color=ink)
-        self.line_item.setPen(pg.mkPen(series, width=2))
+        self.line_item.setPen(pg.mkPen(self._revealed_qcolor(), width=2))
+        self.full_line_item.setPen(pg.mkPen(series, width=2))
         self.scatter_item.setBrush(pg.mkBrush(series))
         self.scatter_item.setPen(pg.mkPen(ink, width=1))
         self.bar_item.setOpts(brush=pg.mkBrush(series))
-        self.marker_item.setBrush(pg.mkBrush(marker))
+        self.hbar_item.setOpts(brush=pg.mkBrush(series))
+        self.marker_item.setSize(self._marker_size)
+        self.marker_item.setBrush(pg.mkBrush(self._marker_qcolor()))
         self.marker_item.setPen(pg.mkPen(ink, width=1))
         self.donut.update()
 
     def _redraw(self):
         self._show_kind_page()
         rows = self._visible_rows()
-        self.line_item.setData([], [])
+        self.line_item.setData([], [], stepMode=None, fillLevel=None)
+        self.full_line_item.setData([], [], stepMode=None, fillLevel=None)
+        self.full_line_item.setVisible(False)
         self.scatter_item.setData([], [])
-        self.bar_item.setOpts(x=[], height=[], width=0.8)
+        self.bar_item.setOpts(x=[], height=[], width=0.8, y=None, y0=None, x0=None, x1=None)
+        self.hbar_item.setOpts(y=[], x0=[], width=[], height=0.6, x=None, y0=None, x1=None, y1=None)
         self.marker_item.setData([], [])
         self.plot.getAxis("bottom").setTicks(None)
-        self.line_item.setVisible(self._kind == "line")
+        self.plot.getAxis("left").setTicks(None)
+        self.line_item.setVisible(self._kind in LINE_KINDS)
         self.scatter_item.setVisible(self._kind == "scatter")
         self.bar_item.setVisible(self._kind in ("bar", "histogram"))
-        self.marker_item.setVisible(self._kind in ("line", "scatter"))
+        self.hbar_item.setVisible(self._kind == "hbar")
+        self.marker_item.setVisible(self._kind in XY_KINDS)
 
         if self._dataset is None:
             self.note_label.setText(
-                "No data set yet. Next: use File → New data set, or File → Load sample CSV."
+                "No rows on this graph yet. Next: press Import table on this graph, "
+                "or use File → Load sample CSV. Other graphs keep their own rows."
             )
             self.donut.set_chart("", [], [], "No data set yet. Load or type some rows.")
             self._redraw_stats()
@@ -689,12 +906,14 @@ class GraphPanel(QWidget):
 
         headers = self._dataset.headers
         message = ""
-        if self._kind in ("line", "scatter"):
-            message = self._draw_xy(headers, rows)
+        if self._kind in XY_KINDS:
+            message = self._draw_xy(headers, rows, self._dataset.rows)
         elif self._kind == "histogram":
             message = self._draw_histogram(headers, rows)
         elif self._kind == "bar":
-            message = self._draw_bars(headers, rows)
+            message = self._draw_bars(headers, rows, horizontal=False)
+        elif self._kind == "hbar":
+            message = self._draw_bars(headers, rows, horizontal=True)
         else:
             message = self._draw_pie(headers, rows)
 
@@ -708,28 +927,81 @@ class GraphPanel(QWidget):
         self._update_playback_label()
         self.apply_plot_palette()
 
-    def _draw_xy(self, headers, rows):
+    def _draw_xy(self, headers, rows, full_rows=None):
         x_name = self.x_combo.currentText()
         y_name = self.y_combo.currentText()
         series = xy_series(headers, rows, x_name, y_name)
-        title, xlabel, ylabel = self._suggest_labels(
-            f"{y_name} vs {x_name}",
-            x_name,
-            y_name,
-        )
+        prefix = {"area": "Area", "step": "Step"}.get(self._kind, "")
+        title_text = f"{y_name} vs {x_name}"
+        if prefix:
+            title_text = f"{prefix}: {title_text}"
+        title, xlabel, ylabel = self._suggest_labels(title_text, x_name, y_name)
         self.plot.setTitle(title)
         self.plot.setLabel("bottom", xlabel)
         self.plot.setLabel("left", ylabel)
         self.plot.showGrid(x=self._grid, y=self._grid, alpha=0.25)
-        self._set_xy_points(series.x_values, series.y_values)
+        full_x = None
+        full_y = None
+        if self._play_style == "marker":
+            source = full_rows if full_rows is not None else rows
+            full = xy_series(headers, source, x_name, y_name)
+            full_x = full.x_values
+            full_y = full.y_values
+        self._set_xy_points(series.x_values, series.y_values, full_x, full_y)
         return series.message
 
-    def _set_xy_points(self, x_values, y_values):
+    def _set_xy_points(self, x_values, y_values, full_x=None, full_y=None):
         """Update the existing line, scatter, and marker. Do not create new items."""
-        if self._kind == "line":
-            self.line_item.setData(x_values, y_values)
+        step = "right" if self._kind == "step" else None
+        fill = 0 if self._kind == "area" else None
+        revealed = self._revealed_qcolor()
+        pen = pg.mkPen(revealed, width=2)
+        brush = None
+        if fill is not None:
+            fill_color = QColor(revealed)
+            fill_color.setAlpha(90)
+            brush = pg.mkBrush(fill_color)
+        show_full = (
+            self._play_style == "marker"
+            and full_x is not None
+            and self._kind in LINE_KINDS
+        )
+        if show_full:
+            self.full_line_item.setVisible(True)
+            self.full_line_item.setData(
+                full_x,
+                full_y,
+                pen=pg.mkPen(self._series_color(), width=2),
+                stepMode=step,
+                fillLevel=None,
+            )
         else:
-            self.scatter_item.setData(x_values, y_values)
+            self.full_line_item.setData([], [], stepMode=None, fillLevel=None)
+            self.full_line_item.setVisible(False)
+        if self._kind in LINE_KINDS:
+            self.line_item.setVisible(True)
+            self.line_item.setData(
+                x_values,
+                y_values,
+                pen=pen,
+                stepMode=step,
+                fillLevel=fill,
+                brush=brush,
+            )
+        else:
+            self.line_item.setData([], [], stepMode=None, fillLevel=None)
+            self.line_item.setVisible(False)
+        if self._kind == "scatter":
+            self.scatter_item.setVisible(True)
+            if self._play_style == "marker" and full_x is not None:
+                self.scatter_item.setData(full_x, full_y, brush=pg.mkBrush(self._series_color()))
+            else:
+                self.scatter_item.setData(x_values, y_values, brush=pg.mkBrush(revealed))
+        else:
+            self.scatter_item.setData([], [])
+            self.scatter_item.setVisible(False)
+        self.marker_item.setSize(self._marker_size)
+        self.marker_item.setBrush(pg.mkBrush(self._marker_qcolor()))
         if x_values:
             self.marker_item.setData([x_values[-1]], [y_values[-1]])
         else:
@@ -751,12 +1023,18 @@ class GraphPanel(QWidget):
                 else:
                     xs.extend(nxt.x_values)
                     ys.extend(nxt.y_values)
+        full_x = None
+        full_y = None
+        if self._play_style == "marker":
+            full = xy_series(headers, rows, x_name, y_name)
+            full_x = full.x_values
+            full_y = full.y_values
         if whole != self._painted_whole:
-            title, xlabel, ylabel = self._suggest_labels(
-                f"{y_name} vs {x_name}",
-                x_name,
-                y_name,
-            )
+            prefix = {"area": "Area", "step": "Step"}.get(self._kind, "")
+            title_text = f"{y_name} vs {x_name}"
+            if prefix:
+                title_text = f"{prefix}: {title_text}"
+            title, xlabel, ylabel = self._suggest_labels(title_text, x_name, y_name)
             self.plot.setTitle(title)
             self.plot.setLabel("bottom", xlabel)
             self.plot.setLabel("left", ylabel)
@@ -768,7 +1046,7 @@ class GraphPanel(QWidget):
                 message = (message + extra).strip()
             self.note_label.setText(message or "Showing every row in original order.")
             self._painted_whole = whole
-        self._set_xy_points(xs, ys)
+        self._set_xy_points(xs, ys, full_x, full_y)
 
     def _draw_histogram(self, headers, rows):
         name = self.hist_combo.currentText()
@@ -786,7 +1064,7 @@ class GraphPanel(QWidget):
         self.bar_item.setOpts(x=centers, height=counts, width=width or 0.8)
         return exclusion_message(blank, missing, text)
 
-    def _draw_bars(self, headers, rows):
+    def _draw_bars(self, headers, rows, horizontal=False):
         how = self.bar_how.currentText() or "mean"
         labels, numbers, message = category_aggregate(
             headers,
@@ -801,13 +1079,35 @@ class GraphPanel(QWidget):
             how,
         )
         self.plot.setTitle(title)
-        self.plot.setLabel("bottom", xlabel)
-        self.plot.setLabel("left", ylabel)
         self.plot.showGrid(x=self._grid, y=self._grid, alpha=0.25)
-        xs = list(range(len(labels)))
-        self.bar_item.setOpts(x=xs, height=numbers, width=0.7)
-        if labels:
-            self.plot.getAxis("bottom").setTicks([[(i, label) for i, label in enumerate(labels)]])
+        spots = list(range(len(labels)))
+        if horizontal:
+            # BarGraphItem draws a horizontal bar when y is the category
+            # and width is the length. No extra library is required.
+            self.plot.setLabel("left", xlabel)
+            self.plot.setLabel("bottom", ylabel)
+            self.hbar_item.setVisible(True)
+            self.bar_item.setVisible(False)
+            self.hbar_item.setOpts(
+                y=spots,
+                x0=[0] * len(spots),
+                width=list(numbers),
+                height=0.6,
+                x=None,
+                y0=None,
+                x1=None,
+                y1=None,
+            )
+            if labels:
+                self.plot.getAxis("left").setTicks([[(i, label) for i, label in enumerate(labels)]])
+        else:
+            self.plot.setLabel("bottom", xlabel)
+            self.plot.setLabel("left", ylabel)
+            self.bar_item.setVisible(True)
+            self.hbar_item.setVisible(False)
+            self.bar_item.setOpts(x=spots, height=numbers, width=0.7, y=None, y0=None, x0=None, x1=None)
+            if labels:
+                self.plot.getAxis("bottom").setTicks([[(i, label) for i, label in enumerate(labels)]])
         return message
 
     def _draw_pie(self, headers, rows):
@@ -928,14 +1228,16 @@ class GraphPanel(QWidget):
         rows = self._dataset.rows
         whole = min(len(rows), int(self._reveal))
         frac = 0.0 if whole >= len(rows) else self._reveal - whole
-        if self._kind in ("line", "scatter"):
+        if self._kind in XY_KINDS:
             self._draw_xy_moving(headers, rows, whole, frac)
         elif whole != self._painted_whole:
             shown = rows[:whole]
             if self._kind == "histogram":
                 message = self._draw_histogram(headers, shown)
             elif self._kind == "bar":
-                message = self._draw_bars(headers, shown)
+                message = self._draw_bars(headers, shown, horizontal=False)
+            elif self._kind == "hbar":
+                message = self._draw_bars(headers, shown, horizontal=True)
             else:
                 message = self._draw_pie(headers, shown)
             total = len(rows)
@@ -966,3 +1268,158 @@ class GraphPanel(QWidget):
             self.playback_label.setText(f"All {count} rows")
         else:
             self.playback_label.setText(f"Row {position} of {count}")
+
+
+class GraphBoard(QWidget):
+    """The comparison page: several GraphPanel widgets in a grid.
+
+    add_panel is the function that creates one more graph. Two columns
+    are used when this board is wide. Each panel keeps the DataSet and
+    the QTimer it was given. Removing one panel does not touch the rest.
+    """
+
+    selection_changed = pyqtSignal()
+    import_requested = pyqtSignal(object)
+    remove_requested = pyqtSignal(object)
+
+    def __init__(self):
+        super().__init__()
+        self.setObjectName("graphBoard")
+        self._panels = []
+        self._selected = None
+        self._next_number = 1
+        self._columns = 2
+
+        self._empty = QLabel(
+            "No graphs yet. Press Add graph. Each graph keeps its own rows, "
+            "its own type, and its own playback."
+        )
+        self._empty.setObjectName("emptyState")
+        self._empty.setWordWrap(True)
+
+        self._host = QWidget()
+        self._grid = QGridLayout(self._host)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(12)
+        self._grid.setVerticalSpacing(12)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setWidget(self._host)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._empty)
+        layout.addWidget(self._scroll, stretch=1)
+        self._reflow()
+
+    def panels(self):
+        return list(self._panels)
+
+    def selected_panel(self):
+        return self._selected
+
+    def panel_for_tab(self, tab):
+        for panel in self._panels:
+            if panel.tab is tab:
+                return panel
+        return None
+
+    def panel_for_dataset(self, dataset):
+        for panel in self._panels:
+            if panel.bound_dataset() is dataset:
+                return panel
+        return None
+
+    def add_panel(self, name=None):
+        """Add one independent graph panel and select it.
+
+        The new panel does not copy another panel's rows. It starts
+        empty. Its playback timer is its own QTimer.
+        """
+        if not name:
+            name = f"Graph {self._next_number}"
+        self._next_number += 1
+        panel = GraphPanel(name)
+        panel.import_requested.connect(self._on_import)
+        panel.remove_requested.connect(self.remove_panel)
+        panel.select_requested.connect(self.select_panel)
+        panel.panel_changed.connect(self._on_panel_changed)
+        self._panels.append(panel)
+        self._columns = self._wanted_columns()
+        self._reflow()
+        self.select_panel(panel)
+        return panel
+
+    def remove_panel(self, panel):
+        """Delete one panel. The other panels keep their rows and timers."""
+        if panel not in self._panels:
+            return
+        self._panels.remove(panel)
+        self.remove_requested.emit(panel)
+        self._grid.removeWidget(panel)
+        panel.hide()
+        panel.deleteLater()
+        if self._selected is panel:
+            self._selected = None
+            if self._panels:
+                self.select_panel(self._panels[-1])
+            else:
+                self.selection_changed.emit()
+        self._reflow()
+
+    def select_panel(self, panel):
+        if panel not in self._panels:
+            return
+        if panel is self._selected:
+            return
+        self._selected = panel
+        for other in self._panels:
+            other.set_selected(other is panel)
+        self.selection_changed.emit()
+
+    def apply_plot_palette(self):
+        for panel in self._panels:
+            panel.apply_plot_palette()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_columns()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fit_columns()
+
+    def _wanted_columns(self):
+        """Two across when the graph area is wide enough for both labels."""
+        width = self._scroll.viewport().width()
+        if width >= 760 and len(self._panels) >= 2:
+            return 2
+        return 1
+
+    def _fit_columns(self):
+        columns = self._wanted_columns()
+        if columns != self._columns:
+            self._columns = columns
+            self._reflow()
+
+    def _reflow(self):
+        """Place panels with a grid layout. Two across when the board is wide."""
+        while self._grid.count():
+            self._grid.takeAt(0)
+        for index, panel in enumerate(self._panels):
+            row = index // self._columns
+            column = index % self._columns
+            self._grid.addWidget(panel, row, column)
+        self._empty.setVisible(not self._panels)
+        for column in range(self._columns):
+            self._grid.setColumnStretch(column, 1)
+
+    def _on_import(self, panel):
+        self.select_panel(panel)
+        self.import_requested.emit(panel)
+
+    def _on_panel_changed(self, panel):
+        if panel is self._selected:
+            self.selection_changed.emit()

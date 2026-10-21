@@ -49,14 +49,21 @@ from dataset import (
     sample_csv_path,
     write_records_csv,
 )
-from graph_view import GraphPanel
+from graph_view import GraphBoard
 from serial_panel import SerialPanel
 
 
+# Area fills a line down to zero. Step draws the same points as stairs.
+# Horizontal bar uses PyQtGraph's BarGraphItem. Box plots and candlesticks
+# are not listed: PyQtGraph does not draw those from one line or one bar
+# item. Matplotlib and QtCharts are not used.
 GRAPH_KINDS = (
     ("line", "Line"),
     ("scatter", "Scatter"),
+    ("area", "Area"),
+    ("step", "Step"),
     ("bar", "Bar"),
+    ("hbar", "Horizontal bar"),
     ("histogram", "Histogram"),
     ("pie", "Pie or donut"),
 )
@@ -225,7 +232,7 @@ class DataSetTab(QWidget):
 
 
 class HomePage(QWidget):
-    """The first screen: pick Line, Scatter, Bar, Histogram, or Pie or donut."""
+    """Pick a graph type for the selected comparison panel."""
 
     def __init__(self, choose_kind):
         super().__init__()
@@ -233,9 +240,10 @@ class HomePage(QWidget):
         title = QLabel("PyGraphy")
         title.setObjectName("homeTitle")
         self.intro = QLabel(
-            "No rows yet. Next: choose a graph, or use File → Load sample CSV. "
+            "No rows yet. Next: press Add graph, or use File → Load sample CSV. "
             "sample_data.csv is in this program's folder. "
-            "PyGraphy does not open it until you ask."
+            "PyGraphy does not open it until you ask. "
+            "Each graph keeps its own rows."
         )
         self.intro.setObjectName("emptyState")
         self.intro.setWordWrap(True)
@@ -319,15 +327,19 @@ class PyGraphyWindow(QMainWindow):
     def _build_workspace(self):
         page = QWidget()
         header = QHBoxLayout()
-        self.view_label = QLabel("View: Line")
+        self.view_label = QLabel("No graph selected")
         self.view_label.setObjectName("sectionLabel")
-        divider_hint = QLabel("Drag the divider between the table and the graph.")
+        divider_hint = QLabel("Drag the divider between the table and the graphs.")
         divider_hint.setObjectName("pageHint")
+        add_graph = QPushButton("Add graph")
+        add_graph.setObjectName("addGraph")
+        add_graph.clicked.connect(self._add_graph)
         home_button = QPushButton("All graph types")
         home_button.clicked.connect(self._show_home)
         header.addWidget(self.view_label)
         header.addStretch(1)
         header.addWidget(divider_hint)
+        header.addWidget(add_graph)
         header.addWidget(home_button)
 
         self.tabs = QTabWidget()
@@ -361,8 +373,8 @@ class PyGraphyWindow(QMainWindow):
         table_column.addLayout(table_tools)
         table_column.addWidget(self.table_holder, stretch=1)
 
-        self.graph_panel = GraphPanel()
-        self.graph_panel.setMinimumWidth(280)
+        self.graph_board = GraphBoard()
+        self.graph_board.setMinimumWidth(320)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setObjectName("tableGraphDivider")
         self.splitter.setChildrenCollapsible(False)
@@ -370,19 +382,18 @@ class PyGraphyWindow(QMainWindow):
         self.splitter.setOpaqueResize(True)
         table_side.setMinimumWidth(260)
         self.splitter.addWidget(table_side)
-        self.splitter.addWidget(self.graph_panel)
+        self.splitter.addWidget(self.graph_board)
         self.splitter.setStretchFactor(0, 2)
         self.splitter.setStretchFactor(1, 3)
-        self.splitter.setSizes([420, 580])
+        self.splitter.setSizes([340, 760])
         handle = self.splitter.handle(1)
-        handle.setToolTip("Drag this divider to resize the table and the graph.")
+        handle.setToolTip("Drag this divider to resize the table and the graphs.")
 
         layout = QVBoxLayout(page)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
         layout.addLayout(header)
         layout.addWidget(self.splitter, stretch=1)
-        layout.addWidget(self.graph_panel.playback_box)
         return page
 
     def _build_mode_bar(self):
@@ -602,26 +613,44 @@ class PyGraphyWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._tab_changed)
         self.tabs.tabCloseRequested.connect(self._close_tab)
         self.grid_action.toggled.connect(self._set_grid)
-        self.graph_panel.grid_check.toggled.connect(self._set_grid)
+        self.graph_board.selection_changed.connect(self._on_selection_changed)
+        self.graph_board.import_requested.connect(self._import_into_panel)
+        self.graph_board.remove_requested.connect(self._forget_panel_tab)
         self.serial_panel.header_received.connect(self._on_serial_header)
         self.serial_panel.row_received.connect(self._on_serial_row)
         self.serial_panel.link_changed.connect(self._on_link_changed)
         self.serial_panel.failed.connect(self._show_error)
 
+    def _add_graph(self):
+        """Add one comparison panel. It does not copy another panel's rows."""
+        panel = self.graph_board.add_panel()
+        self._set_notice(
+            f"Added {panel.name}. It has its own type, columns, rows, and playback."
+        )
+        return panel
+
+    def _panel(self):
+        return self.graph_board.selected_panel()
+
+    def _target_panel(self):
+        panel = self._panel()
+        if panel is None:
+            panel = self.graph_board.add_panel()
+        return panel
+
     def _choose_kind(self, kind):
+        """Set the graph type on the selected panel only."""
+        panel = self._target_panel()
         self._kind = kind
         label = dict(GRAPH_KINDS)[kind]
-        self.view_label.setText(f"View: {label}")
+        self.view_label.setText(f"Selected: {panel.name} · {label}")
         for key, action in self.kind_actions.items():
             action.blockSignals(True)
             action.setChecked(key == kind)
             action.blockSignals(False)
         self._set_mode("graph")
         self.stack.setCurrentWidget(self.workspace)
-        current = self._current_dataset()
-        if self.graph_panel.bound_dataset() is not current:
-            self.graph_panel.show_dataset(current)
-        self.graph_panel.set_kind(kind)
+        panel.set_kind(kind)
         self._update_status()
 
     def _show_home(self):
@@ -632,12 +661,17 @@ class PyGraphyWindow(QMainWindow):
         self.grid_action.blockSignals(True)
         self.grid_action.setChecked(enabled)
         self.grid_action.blockSignals(False)
-        self.graph_panel.set_grid(enabled)
+        panel = self._panel()
+        if panel is not None:
+            panel.set_grid(enabled)
 
     def _current_tab(self):
-        widget = self.tabs.currentWidget()
-        if isinstance(widget, DataSetTab):
-            return widget
+        """The table that belongs to the selected graph, if it has rows loaded."""
+        panel = self._panel()
+        if panel is None or panel.tab is None:
+            return None
+        if isinstance(panel.tab, DataSetTab):
+            return panel.tab
         return None
 
     def _current_dataset(self):
@@ -655,11 +689,16 @@ class PyGraphyWindow(QMainWindow):
             number += 1
         return f"{name} ({number})"
 
-    def _add_tab(self, dataset):
+    def _add_tab(self, dataset, panel=None):
         dataset.name = self._unique_name(dataset.name)
         tab = DataSetTab(dataset)
+        if panel is not None:
+            panel.attach_tab(tab)
+            panel.set_name(dataset.name)
+        self.tabs.blockSignals(True)
         self.tabs.addTab(tab, dataset.name)
         self.tabs.setCurrentWidget(tab)
+        self.tabs.blockSignals(False)
         self._sync_table_page()
         return tab
 
@@ -668,9 +707,11 @@ class PyGraphyWindow(QMainWindow):
         name = name.strip()
         if not accepted or not name:
             return
-        self._add_tab(DataSet(name))
-        self._choose_kind(self._kind)
-        self._set_notice(f"Created {name}.")
+        panel = self.graph_board.add_panel(name)
+        self._add_tab(DataSet(name), panel)
+        panel.show_dataset(panel.tab.dataset)
+        self._on_selection_changed()
+        self._set_notice(f"Added {panel.name}. Its table is empty until you type or import.")
 
     def _open_csv_dialog(self):
         start = str(sample_csv_path().parent)
@@ -684,29 +725,38 @@ class PyGraphyWindow(QMainWindow):
             self._load_path(Path(path))
 
     def _import_table(self):
+        """File menu import loads into the selected graph only."""
+        self._import_into_panel(self._target_panel())
+
+    def _import_into_panel(self, panel):
+        """Open a csv, xlsx, or ods file into this one panel."""
+        if panel is None:
+            return
+        if panel is not self._panel():
+            self.graph_board.select_panel(panel)
         start = str(sample_csv_path().parent)
         path, _selected = QFileDialog.getOpenFileName(
             self,
-            "Import table",
+            f"Import table into {panel.name}",
             start,
             "Spreadsheets (*.csv *.xlsx *.ods);;CSV (*.csv);;Excel (*.xlsx);;LibreOffice Calc (*.ods)",
         )
         if path:
-            self._load_imported_file(Path(path))
+            self._load_imported_file(Path(path), panel)
 
-    def _load_imported_file(self, path):
+    def _load_imported_file(self, path, panel=None):
         try:
             headers, rows, note = load_table(path)
         except (OSError, ValueError, csv.Error) as error:
             self._show_error(f"Could not read {path.name}: {error}")
             return
-        self._place_loaded_table(
+        self._replace_panel_rows(
+            panel or self._target_panel(),
             headers,
             rows,
             note,
             source_path=path,
             preferred_name=path.stem,
-            from_home_starts_new=False,
             label=path.name,
         )
 
@@ -723,31 +773,37 @@ class PyGraphyWindow(QMainWindow):
         except (ValueError, csv.Error) as error:
             self._show_error(f"Could not read the pasted table: {error}")
             return
-        self._place_loaded_table(
+        panel = self._target_panel()
+        self._replace_panel_rows(
+            panel,
             headers,
             rows,
             note,
             source_path=None,
             preferred_name="Pasted",
-            from_home_starts_new=False,
             label="pasted table",
         )
 
     def _sync_table_page(self):
-        """Show the empty grid when no tab is open, otherwise show the tabs."""
-        if self.tabs.count() == 0:
-            self.table_holder.setCurrentWidget(self.empty_table)
-        else:
-            self.table_holder.setCurrentWidget(self.tabs)
-
-    def _clear_table(self):
-        """Clear the open tab's rows and headers in memory.
-
-        sample_data.csv and any file the user opened stay untouched.
-        With no tab open, only the status bar changes.
-        """
+        """Show the selected graph's table. Other graphs' tables stay put."""
         tab = self._current_tab()
         if tab is None:
+            self.table_holder.setCurrentWidget(self.empty_table)
+            return
+        self.tabs.blockSignals(True)
+        self.tabs.setCurrentWidget(tab)
+        self.tabs.blockSignals(False)
+        self.table_holder.setCurrentWidget(self.tabs)
+
+    def _clear_table(self):
+        """Clear the selected graph's rows and headers in memory.
+
+        sample_data.csv and any file the user opened stay untouched.
+        Other graphs are not cleared. With no table, only the status bar changes.
+        """
+        panel = self._panel()
+        tab = self._current_tab()
+        if panel is None or tab is None:
             self.dataset_status.setText("Nothing to clear.")
             self.row_status.setText("0 rows")
             return
@@ -756,8 +812,9 @@ class PyGraphyWindow(QMainWindow):
             answer = QMessageBox.question(
                 self,
                 "Clear table",
-                f"Clear every row and column in '{dataset.name}'?\n\n"
-                "This forgets them in memory. It does not change the file on disk.",
+                f"Clear every row and column in '{panel.name}'?\n\n"
+                "This forgets them in memory. Other graphs stay as they are. "
+                "It does not change the file on disk.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -765,10 +822,10 @@ class PyGraphyWindow(QMainWindow):
                 return
         dataset.clear_memory()
         tab.refresh_table()
-        self.graph_panel.show_dataset(dataset)
+        panel.show_dataset(dataset)
         self._bind_manual_view()
         self._update_status()
-        self._set_notice("Cleared the table in memory. No file was changed.")
+        self._set_notice(f"Cleared {panel.name} in memory. Other graphs were not changed.")
 
     def _load_sample(self):
         path = sample_csv_path()
@@ -784,86 +841,111 @@ class PyGraphyWindow(QMainWindow):
             self._show_error(f"Could not read {path.name}: {error}")
             return
 
-        self._place_loaded_table(
+        self._replace_panel_rows(
+            self._target_panel(),
             headers,
             rows,
             note,
             source_path=path,
             preferred_name=preferred_name or path.stem,
-            from_home_starts_new=True,
             label=path.name,
         )
 
-    def _on_home_page(self):
-        return self.mode_stack.currentWidget() is self.stack and self.stack.currentWidget() is self.home
-
-    def _place_loaded_table(
-        self, headers, rows, note, source_path, preferred_name, from_home_starts_new, label
-    ):
-        target = self._choose_load_target(label, from_home_starts_new)
-        if target == "cancel":
+    def _replace_panel_rows(self, panel, headers, rows, note, source_path, preferred_name, label):
+        """Load rows into one graph. Ask first when that graph already has rows."""
+        if panel is None:
             return
-        if target == "into":
-            tab = self._current_tab()
-            tab.dataset.source_path = source_path
-            tab.dataset.replace_table(headers, rows)
-            tab.refresh_table()
-            self.graph_panel.show_dataset(tab.dataset)
+        dataset = panel.bound_dataset()
+        if dataset is not None and dataset.rows:
+            answer = QMessageBox.question(
+                self,
+                "Replace rows?",
+                f"Replace every row in {panel.name} with {label}?\n\n"
+                "Only this graph changes. The other graphs keep their rows. "
+                "The file on disk is not modified.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        if dataset is None:
+            dataset = DataSet(preferred_name or panel.name)
+            self._add_tab(dataset, panel)
+        elif not dataset.headers and preferred_name:
+            dataset.name = self._unique_name(preferred_name)
+            panel.set_name(dataset.name)
+            index = self.tabs.indexOf(panel.tab)
+            if index >= 0:
+                self.tabs.setTabText(index, dataset.name)
+        dataset.source_path = source_path
+        dataset.replace_table(headers, rows)
+        panel.tab.refresh_table()
+        panel.show_dataset(dataset)
+        if panel is not self._panel():
+            self.graph_board.select_panel(panel)
         else:
-            dataset = DataSet(preferred_name or "Data")
-            dataset.source_path = source_path
-            dataset.replace_table(headers, rows)
-            self._add_tab(dataset)
-        self._choose_kind(self._kind)
-        self._bind_manual_view()
-        self._set_notice(note)
+            self._on_selection_changed()
+        self._set_notice(f"{note} Loaded into {panel.name}. Other graphs were not changed.")
 
-    def _choose_load_target(self, filename, from_home_starts_new):
-        tab = self._current_tab()
+    def _forget_panel_tab(self, panel):
+        """Drop the table that belonged to a graph that is being removed."""
+        tab = panel.tab
+        panel.tab = None
         if tab is None:
-            return "new"
-        if from_home_starts_new and self._on_home_page():
-            return "new"
-        if not tab.dataset.headers and not tab.dataset.rows:
-            return "into"
-        return self._ask_load_target(filename)
+            return
+        index = self.tabs.indexOf(tab)
+        if index < 0:
+            return
+        self.tabs.blockSignals(True)
+        self.tabs.removeTab(index)
+        self.tabs.blockSignals(False)
 
-    def _ask_load_target(self, filename):
-        tab = self._current_tab()
-        box = QMessageBox(self)
-        box.setWindowTitle("Load table")
-        box.setText(
-            f"Load {filename} into '{tab.dataset.name}'? "
-            "That replaces the rows in memory. The original file is not modified."
-        )
-        into_button = box.addButton("Into this data set", QMessageBox.ButtonRole.AcceptRole)
-        new_button = box.addButton("New data set", QMessageBox.ButtonRole.ActionRole)
-        box.addButton(QMessageBox.StandardButton.Cancel)
-        box.exec()
-        clicked = box.clickedButton()
-        if clicked is into_button:
-            return "into"
-        if clicked is new_button:
-            return "new"
-        return "cancel"
+    def _on_selection_changed(self):
+        panel = self._panel()
+        if panel is None:
+            self.view_label.setText("No graph selected")
+            self._sync_table_page()
+            self._bind_manual_view()
+            self._update_status()
+            return
+        self._kind = panel.kind()
+        label = dict(GRAPH_KINDS).get(self._kind, self._kind)
+        self.view_label.setText(f"Selected: {panel.name} · {label}")
+        for key, action in self.kind_actions.items():
+            action.blockSignals(True)
+            action.setChecked(key == self._kind)
+            action.blockSignals(False)
+        self.grid_action.blockSignals(True)
+        self.grid_action.setChecked(panel.grid_enabled())
+        self.grid_action.blockSignals(False)
+        self._sync_table_page()
+        self._bind_manual_view()
+        self._update_status()
 
     def _close_current_tab(self):
-        index = self.tabs.currentIndex()
-        if index >= 0:
-            self._close_tab(index)
+        panel = self._panel()
+        if panel is None:
+            return
+        self.graph_board.remove_panel(panel)
 
     def _close_tab(self, index):
+        tab = self.tabs.widget(index)
+        panel = self.graph_board.panel_for_tab(tab)
+        if panel is not None:
+            self.graph_board.remove_panel(panel)
+            return
         self.tabs.removeTab(index)
-        if self.tabs.count() == 0:
-            self.graph_panel.show_dataset(None)
         self._sync_table_page()
         self._bind_manual_view()
         self._update_status()
 
     def _tab_changed(self, _index):
         self._serial_hold = False
-        dataset = self._current_dataset()
-        self.graph_panel.show_dataset(dataset)
+        tab = self.tabs.currentWidget()
+        panel = self.graph_board.panel_for_tab(tab) if isinstance(tab, DataSetTab) else None
+        if panel is not None and panel is not self._panel():
+            self.graph_board.select_panel(panel)
+            return
         if self._mode == "manual":
             self._bind_manual_view()
         self._update_status()
@@ -910,18 +992,27 @@ class PyGraphyWindow(QMainWindow):
         tab = self._current_tab()
         if tab is None:
             return
-        if self.graph_panel.bound_dataset() is not tab.dataset:
-            self.graph_panel.show_dataset(tab.dataset)
-        else:
-            self.graph_panel.note_rows_changed(False)
+        self._refresh_panel(tab, False)
         tab.update_empty()
         self._update_status()
 
+    def _refresh_panel(self, tab, headers_changed):
+        """Redraw the graph that owns this table. Leave the other graphs alone."""
+        panel = self.graph_board.panel_for_tab(tab)
+        if panel is None:
+            return
+        if panel.bound_dataset() is not tab.dataset:
+            panel.show_dataset(tab.dataset)
+        else:
+            panel.note_rows_changed(headers_changed)
+
     def _manual_tab(self):
-        tab = self._current_tab()
-        if tab is None:
-            tab = self._add_tab(DataSet("Manual"))
-        return tab
+        panel = self._target_panel()
+        if panel.tab is None:
+            self._add_tab(DataSet(panel.name), panel)
+            panel.show_dataset(panel.tab.dataset)
+            self._on_selection_changed()
+        return panel.tab
 
     def _add_manual_column(self):
         name = self.column_name_edit.text().strip()
@@ -932,13 +1023,12 @@ class PyGraphyWindow(QMainWindow):
         added = tab.dataset.add_column(name)
         self.column_name_edit.clear()
         tab.refresh_table()
-        self.graph_panel.show_dataset(tab.dataset)
-        self.graph_panel.note_rows_changed(True)
+        self._refresh_panel(tab, True)
         self._bind_manual_view()
         self._update_status()
         self._set_notice(
             f"Added column {added} to {tab.dataset.name}. "
-            "It stays in memory until you export."
+            "It stays in memory until you export. Other graphs were not changed."
         )
 
     def _add_manual_row(self):
@@ -951,10 +1041,7 @@ class PyGraphyWindow(QMainWindow):
             self._show_error(message)
             return
         tab.note_appended()
-        if self.graph_panel.bound_dataset() is not tab.dataset:
-            self.graph_panel.show_dataset(tab.dataset)
-        else:
-            self.graph_panel.note_rows_changed(False)
+        self._refresh_panel(tab, False)
         self._update_status()
         self._set_notice(f"Added a blank row to {tab.dataset.name}. Type the cell values.")
 
@@ -971,13 +1058,17 @@ class PyGraphyWindow(QMainWindow):
             self._show_error("That row is not in this data set.")
             return
         tab.update_empty()
-        self.graph_panel.note_rows_changed(False)
+        self._refresh_panel(tab, False)
         self._update_status()
         self._set_notice(f"Deleted a row from {tab.dataset.name}.")
 
     def _copy_graph(self):
+        panel = self._panel()
+        if panel is None:
+            self._show_error("Add a graph before copying one.")
+            return
         try:
-            image = self.graph_panel.image_of_current_graph()
+            image = panel.image_of_current_graph()
         except Exception as error:
             self._show_error(f"Could not copy the graph image: {error}")
             self._export_png()
@@ -997,7 +1088,7 @@ class PyGraphyWindow(QMainWindow):
             self._export_png()
             return
         self._set_notice(
-            "Copied the current graph as a PNG image. "
+            f"Copied {panel.name} as a PNG image. "
             "Paste it into LibreOffice Writer, Microsoft Word, or a Google Doc."
         )
 
@@ -1015,10 +1106,11 @@ class PyGraphyWindow(QMainWindow):
         )
 
     def _on_serial_header(self, cells):
-        tab = self._current_tab()
-        if tab is None:
-            tab = self._add_tab(DataSet("Serial capture"))
-            self._choose_kind(self._kind)
+        panel = self._target_panel()
+        if panel.tab is None:
+            self._add_tab(DataSet(panel.name), panel)
+            panel.show_dataset(panel.tab.dataset)
+        tab = panel.tab
         before = list(tab.dataset.headers)
         message = tab.dataset.adopt_header(cells)
         if message:
@@ -1028,7 +1120,7 @@ class PyGraphyWindow(QMainWindow):
             return
         self._serial_hold = False
         tab.refresh_table()
-        self.graph_panel.note_rows_changed(tab.dataset.headers != before)
+        self._refresh_panel(tab, tab.dataset.headers != before)
         self._update_status()
         self.serial_panel.show_notice(f"Connected. Columns: {', '.join(tab.dataset.headers)}.")
 
@@ -1045,7 +1137,7 @@ class PyGraphyWindow(QMainWindow):
             self.serial_panel.show_notice(message)
             return
         tab.note_appended()
-        self.graph_panel.note_rows_changed(False)
+        self._refresh_panel(tab, False)
         self._update_status()
 
     def _on_link_changed(self, text):
@@ -1054,14 +1146,15 @@ class PyGraphyWindow(QMainWindow):
             self._serial_hold = False
 
     def _export_png(self):
-        if self._current_dataset() is None and self.stack.currentWidget() is self.home:
-            self._show_error("Choose a graph view before exporting.")
+        panel = self._panel()
+        if panel is None:
+            self._show_error("Add a graph before exporting.")
             return
         path = self._choose_save_path("Export graph", "PNG image (*.png)", ".png")
         if not path:
             return
-        self.graph_panel.save_png(str(path))
-        self._set_notice(f"Saved the graph to {path.name}.")
+        panel.save_png(str(path))
+        self._set_notice(f"Saved {panel.name} to {path.name}.")
 
     def _export_csv(self):
         dataset = self._current_dataset()
@@ -1137,17 +1230,22 @@ class PyGraphyWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About PyGraphy",
-            "PyGraphy plots one series from each data set.\n\n"
+            "PyGraphy plots one series on each comparison graph.\n\n"
             "The window starts with no rows. Nothing is saved when you close it.\n"
+            "Add graph puts another graph beside the others. Each one has its own rows.\n"
+            "Import table on a graph loads a csv, xlsx, or ods file into that graph only.\n"
+            "File → Paste table goes into the selected graph. The label says Selected.\n"
             "File → Load sample CSV reads sample_data.csv from the program folder.\n"
-            "Clear table forgets the open tab in memory and does not change that file.\n"
-            "Drag the divider between the table and the graph to resize them.\n\n"
-            "Graph mode shows the plot and, from All graph types, the home page.\n"
+            "Clear table forgets the selected graph's table and does not change that file.\n"
+            "Drag the divider between the table and the graphs to resize them.\n\n"
+            "Graph mode shows the graphs and, from All graph types, the home page.\n"
             "Manual entry edits the same in-memory rows. Closing the app does not save them.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
-            "Line, scatter, bar, and histogram use PyQtGraph.\n"
+            "Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.\n"
             "Pie or donut is drawn with QPainter. PyQtGraph does not draw "
-            "pies well, and PyQt6.QtCharts is not installed.\n\n"
+            "pies well, and PyQt6.QtCharts is not installed.\n"
+            "Box plots and candlesticks are not included, because PyQtGraph "
+            "does not draw them from one line or one bar item.\n\n"
             "USB serial is read in the window's event loop. "
             "Record playback only replays rows already in the active data set. "
             "Copy graph is a still picture of the current graph type, not live acquisition.\n\n"
@@ -1427,9 +1525,9 @@ def _restyle_after_scheme_change(app, window):
         sync_palette_to_color_scheme(app)
         load_style(app)
         sync_palette_to_color_scheme(app)
-        panel = getattr(window, "graph_panel", None)
-        if panel is not None:
-            panel.apply_plot_palette()
+        board = getattr(window, "graph_board", None)
+        if board is not None:
+            board.apply_plot_palette()
 
     QTimer.singleShot(0, apply_when_ready)
 
