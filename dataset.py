@@ -6,19 +6,37 @@ table uses a separate view, so it must not reorder this list.
 
 import csv
 import io
+import sys
 from pathlib import Path
 
 
 MISSING_WORDS = {"na", "n/a", "null", "none", "nan"}
 
 
-def sample_csv_path():
-    """Locate sample_data.csv next to this file, not from the shell's folder.
+def bundled_path(filename):
+    """Find a file shipped with PyGraphy.
 
-    ``Path(__file__)`` is this source file. Its parent is the PyGraphy
-    folder even when the app is started from another directory.
+    Look next to this source file first. That is the project folder when
+    you run ``python main.py``. After ``pip install .``, the same file is
+    copied to ``share/pygraphy`` inside the virtual environment, and this
+    function uses that copy when the file is not beside the source.
     """
-    return Path(__file__).resolve().parent / "sample_data.csv"
+    beside_source = Path(__file__).resolve().parent / filename
+    if beside_source.is_file():
+        return beside_source
+    installed = Path(sys.prefix) / "share" / "pygraphy" / filename
+    if installed.is_file():
+        return installed
+    return beside_source
+
+
+def sample_csv_path():
+    """Locate sample_data.csv from the program, not from the shell's folder.
+
+    See ``bundled_path``. The file stays in the project folder. PyGraphy
+    reads it only when you choose File → Load sample CSV.
+    """
+    return bundled_path("sample_data.csv")
 
 
 def parse_cell(text):
@@ -583,6 +601,28 @@ class DataSet:
         self.headers = list(headers)
         self.rows = [list(row) for row in rows]
         self._prefer_default_columns()
+
+    def clear_memory(self):
+        """Drop this tab's rows and headers. Does not open or write a file."""
+        self.headers = []
+        self.rows = []
+        self.view["x"] = ""
+        self.view["y"] = ""
+        self.view["hist_column"] = ""
+        self.view["bar_category"] = ""
+        self.view["bar_value"] = ""
+        self.view["pie_category"] = ""
+        self.view["pie_value"] = ""
+        self.view["stats"] = ""
+        self.view["title"] = ""
+        self.view["xlabel"] = ""
+        self.view["ylabel"] = ""
+        self.view["bins"] = 10
+        self.view["aggregation"] = "mean"
+        self.view["pie_mode"] = "count"
+        self.view["title_auto"] = True
+        self.view["xlabel_auto"] = True
+        self.view["ylabel_auto"] = True
 
     def adopt_header(self, cells):
         """Use a serial header line. Return an error message, or None."""

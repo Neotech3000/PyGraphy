@@ -40,6 +40,7 @@ from PyQt6.QtGui import QAction, QActionGroup, QColor, QPalette
 
 from dataset import (
     DataSet,
+    bundled_path,
     load_csv,
     load_delimited_text,
     load_table,
@@ -232,9 +233,9 @@ class HomePage(QWidget):
         title = QLabel("PyGraphy")
         title.setObjectName("homeTitle")
         self.intro = QLabel(
-            "sample_data.csv is in the same folder as this program. "
-            "PyGraphy loads it when the window opens. "
-            "Next: choose a graph. The table and the plot use those rows."
+            "No rows yet. Next: choose a graph, or use File → Load sample CSV. "
+            "sample_data.csv is in this program's folder. "
+            "PyGraphy does not open it until you ask."
         )
         self.intro.setObjectName("emptyState")
         self.intro.setWordWrap(True)
@@ -310,7 +311,9 @@ class PyGraphyWindow(QMainWindow):
         self._build_status()
         self._connect_signals()
         self._set_mode("graph")
-        self._open_bundled_file()
+        # Every launch starts empty. Nothing is read back from a previous session.
+        self.stack.setCurrentWidget(self.workspace)
+        self._sync_table_page()
         self._update_status()
 
     def _build_workspace(self):
@@ -332,6 +335,32 @@ class PyGraphyWindow(QMainWindow):
         self.tabs.setTabsClosable(True)
         self.tabs.setDocumentMode(True)
 
+        self.empty_table = QTableView()
+        self.empty_table.setObjectName("emptyDataTable")
+        self.empty_table.setAlternatingRowColors(True)
+        self.empty_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table_holder = QStackedWidget()
+        self.table_holder.addWidget(self.empty_table)
+        self.table_holder.addWidget(self.tabs)
+
+        table_tools = QHBoxLayout()
+        table_label = QLabel("Data table")
+        table_label.setObjectName("sectionLabel")
+        self.clear_button = QPushButton("Clear table")
+        self.clear_button.setObjectName("clearTable")
+        self.clear_button.clicked.connect(self._clear_table)
+        table_tools.addWidget(table_label)
+        table_tools.addStretch(1)
+        table_tools.addWidget(self.clear_button)
+
+        table_side = QWidget()
+        table_side.setObjectName("dataTableSide")
+        table_column = QVBoxLayout(table_side)
+        table_column.setContentsMargins(0, 0, 0, 0)
+        table_column.setSpacing(8)
+        table_column.addLayout(table_tools)
+        table_column.addWidget(self.table_holder, stretch=1)
+
         self.graph_panel = GraphPanel()
         self.graph_panel.setMinimumWidth(280)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -339,8 +368,8 @@ class PyGraphyWindow(QMainWindow):
         self.splitter.setChildrenCollapsible(False)
         self.splitter.setHandleWidth(10)
         self.splitter.setOpaqueResize(True)
-        self.tabs.setMinimumWidth(260)
-        self.splitter.addWidget(self.tabs)
+        table_side.setMinimumWidth(260)
+        self.splitter.addWidget(table_side)
         self.splitter.addWidget(self.graph_panel)
         self.splitter.setStretchFactor(0, 2)
         self.splitter.setStretchFactor(1, 3)
@@ -631,6 +660,7 @@ class PyGraphyWindow(QMainWindow):
         tab = DataSetTab(dataset)
         self.tabs.addTab(tab, dataset.name)
         self.tabs.setCurrentWidget(tab)
+        self._sync_table_page()
         return tab
 
     def _new_dataset(self):
@@ -703,22 +733,42 @@ class PyGraphyWindow(QMainWindow):
             label="pasted table",
         )
 
-    def _open_bundled_file(self):
-        """Show sample_data.csv from the application folder as soon as the window opens.
+    def _sync_table_page(self):
+        """Show the empty grid when no tab is open, otherwise show the tabs."""
+        if self.tabs.count() == 0:
+            self.table_holder.setCurrentWidget(self.empty_table)
+        else:
+            self.table_holder.setCurrentWidget(self.tabs)
 
-        sample_csv_path() uses the folder of dataset.py, so the file is found
-        even if the terminal was started somewhere else.
+    def _clear_table(self):
+        """Clear the open tab's rows and headers in memory.
+
+        sample_data.csv and any file the user opened stay untouched.
+        With no tab open, only the status bar changes.
         """
-        path = sample_csv_path()
-        if not path.is_file():
-            self.home.intro.setText(
-                f"Could not find {path.name} next to the program. "
-                "Put that file in the same folder, then start PyGraphy again."
-            )
-            self._set_notice(f"Could not find the local data file at {path}.")
-            self.stack.setCurrentWidget(self.home)
+        tab = self._current_tab()
+        if tab is None:
+            self.dataset_status.setText("Nothing to clear.")
+            self.row_status.setText("0 rows")
             return
-        self._load_path(path, preferred_name="Sample")
+        dataset = tab.dataset
+        if dataset.rows:
+            answer = QMessageBox.question(
+                self,
+                "Clear table",
+                f"Clear every row and column in '{dataset.name}'?\n\n"
+                "This forgets them in memory. It does not change the file on disk.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        dataset.clear_memory()
+        tab.refresh_table()
+        self.graph_panel.show_dataset(dataset)
+        self._bind_manual_view()
+        self._update_status()
+        self._set_notice("Cleared the table in memory. No file was changed.")
 
     def _load_sample(self):
         path = sample_csv_path()
@@ -806,6 +856,7 @@ class PyGraphyWindow(QMainWindow):
         self.tabs.removeTab(index)
         if self.tabs.count() == 0:
             self.graph_panel.show_dataset(None)
+        self._sync_table_page()
         self._bind_manual_view()
         self._update_status()
 
@@ -1087,8 +1138,9 @@ class PyGraphyWindow(QMainWindow):
             self,
             "About PyGraphy",
             "PyGraphy plots one series from each data set.\n\n"
-            "It opens sample_data.csv from the same folder as the program.\n"
-            "The table, the graphs, and record playback use those rows.\n"
+            "The window starts with no rows. Nothing is saved when you close it.\n"
+            "File → Load sample CSV reads sample_data.csv from the program folder.\n"
+            "Clear table forgets the open tab in memory and does not change that file.\n"
             "Drag the divider between the table and the graph to resize them.\n\n"
             "Graph mode shows the plot and, from All graph types, the home page.\n"
             "Manual entry edits the same in-memory rows. Closing the app does not save them.\n"
@@ -1290,7 +1342,7 @@ def load_style(app):
     found or loaded. Call it again after a light or dark change so
     palette() roles are looked up on the new colors.
     """
-    path = Path(__file__).resolve().parent / "style.qss"
+    path = bundled_path("style.qss")
     if not path.is_file():
         app.setStyleSheet("")
         return

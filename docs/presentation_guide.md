@@ -15,7 +15,7 @@ Have these four spots ready in the editor:
 
 ## What to show, in order
 
-**0:00 — Local file already on screen.** The window opens on the line graph of `sample_data.csv`. Point at the Sample tab, the table columns `time_s`, `temperature_c`, `humidity_pct`, and `location`, and the status bar row count. Drag the divider between the table and the graph. Mention File, Graph, and Help.
+**0:00 — Empty start, then the local file.** The window opens with no rows. Point at Clear table and the empty grid. The status bar says “No data set” and “0 rows”. Then choose File → Load sample CSV. Point at the Sample tab, the table columns `time_s`, `temperature_c`, `humidity_pct`, and `location`, and the status bar row count. Drag the divider between the table and the graph. Mention File, Graph, and Help.
 
 **0:30 — Where that file lives.** Say the path comes from `sample_csv_path()`, next to the program, not from whichever folder the terminal was in. The notice names `sample_data.csv` and says the file was not modified. All graph types is the screen with the five graph buttons.
 

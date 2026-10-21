@@ -5,8 +5,14 @@ description = "A PyQt6 graphing application"
 requires-python = ">=3.10"
 dependencies = ["PyQt6>=6.6", "pyqtgraph>=0.14", "openpyxl>=3.1", "odfpy>=1.4"]
 
+# gui-scripts creates a pygraphy command on Linux, macOS, and Windows.
+# On Windows that command is pygraphy.exe and it does not open a console.
+# This is not one binary that runs on every operating system.
 [project.gui-scripts]
 pygraphy = "main:main"
+
+[tool.setuptools.data-files]
+"share/pygraphy" = ["sample_data.csv", "style.qss"]
 
 [build-system]
 requires = ["setuptools>=68"]

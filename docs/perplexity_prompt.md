@@ -16,7 +16,7 @@ Do not rewrite the project. Do not replace these files. Do not add a Google acco
 
 The mode buttons are built in `PyGraphyWindow._build_mode_bar`. Their labels are Graph, Manual entry, and Microcontroller. Clicking one calls `PyGraphyWindow._set_mode`. That function only changes which page is visible. It does not call `replace_table` and it does not clear `dataset.rows`.
 
-Graph mode shows `self.stack`. That stack has two pages: the workspace from `_build_workspace` (the tabs, the divider, the current plot, and record playback) and `HomePage` (All graph types). Startup loads `sample_data.csv` through `_open_bundled_file` and shows the workspace. Choosing Graph again shows whichever of those two pages was already open.
+Graph mode shows `self.stack`. That stack has two pages: the workspace from `_build_workspace` (the tabs, the divider, the current plot, and record playback) and `HomePage` (All graph types). Startup shows the workspace with an empty table. It does not load `sample_data.csv`, and it does not read a hidden session file. File → Load sample CSV calls `_load_sample`. Clear table calls `_clear_table`, which calls `DataSet.clear_memory` and does not change the file on disk. Choosing Graph again shows whichever of those two pages was already open.
 
 Manual entry mode shows the page from `_build_manual_page`. The column box is `column_name_edit`. The buttons call `_add_manual_column`, `_add_manual_row`, and `_delete_manual_row`. The editable grid is `manual_table`. `_bind_manual_view` points that grid at the active tab’s `RecordTableModel`, not at the sort proxy.
 

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=PyGraphy
+Comment=Graph a table from a local CSV
+Exec=./.venv/bin/pygraphy
+Path=.
+Terminal=false
+Categories=Education;Science;

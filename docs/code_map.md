@@ -96,9 +96,9 @@ Blank, missing (`na`, `n/a`, `null`, `none`, `nan`), and other non-numeric text 
 
 **Window title.** In `PyGraphyWindow.__init__` in `main.py`, change `self.setWindowTitle("PyGraphy")`. The large word on the home page is a separate label, `QLabel("PyGraphy")`, inside `HomePage`. `main()` also calls `app.setApplicationName("PyGraphy")`.
 
-**Sample path.** Change `sample_csv_path()` in `dataset.py`. It returns `Path(__file__).resolve().parent / "sample_data.csv"`. `__file__` is `dataset.py`, so the CSV is found next to the source even if the shell’s current directory is somewhere else. Keep the file beside the modules, or change both the string and the file you ship.
+**Sample path.** Change `sample_csv_path()` in `dataset.py`. It calls `bundled_path("sample_data.csv")`. That looks next to `dataset.py` first, then in the virtual environment’s `share/pygraphy` folder after `pip install .`. The shell’s current directory is not used. Startup does not open the file. File → Load sample CSV calls `_load_sample`.
 
-**Graph type.** The five choices live in `GRAPH_KINDS` at the top of `main.py`. Startup calls `_open_bundled_file`, which loads `sample_data.csv` and shows the line view. `_choose_kind` stores the choice, checks the Graph menu, and calls `GraphPanel.set_kind`. A new kind also needs a branch in `GraphPanel._redraw` and, if it needs different controls, an entry in `KIND_PAGE`.
+**Graph type.** The five choices live in `GRAPH_KINDS` at the top of `main.py`. Startup shows an empty table and does not load `sample_data.csv`. `_choose_kind` stores the choice, checks the Graph menu, and calls `GraphPanel.set_kind`. A new kind also needs a branch in `GraphPanel._redraw` and, if it needs different controls, an entry in `KIND_PAGE`. Clear table calls `_clear_table`, which calls `DataSet.clear_memory` and does not write a file.
 
 **Serial baud.** The choices are `BAUD_RATES` in `serial_panel.py`. The default is `self.baud_combo.setCurrentText("115200")`. `connect_port` reads whatever the combo shows and passes it to `setBaudRate`. The expected device text is a header line, then comma-separated rows, such as `millis,temperature` followed by `1000,21.5`.
 
