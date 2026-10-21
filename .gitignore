@@ -8,3 +8,11 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Local editor files. Do not publish these.
+.cursor/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

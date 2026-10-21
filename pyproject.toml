@@ -3,7 +3,7 @@ name = "pygraphy"
 version = "0.1.0"
 description = "A PyQt6 graphing application"
 requires-python = ">=3.10"
-dependencies = ["PyQt6>=6.6"]
+dependencies = ["PyQt6>=6.6", "pyqtgraph>=0.14", "openpyxl>=3.1", "odfpy>=1.4"]
 
 [project.gui-scripts]
 pygraphy = "main:main"
@@ -13,7 +13,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main"]
+py-modules = ["main", "dataset", "graph_view", "serial_panel"]
 
 [tool.ruff]
 line-length = 100

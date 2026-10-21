@@ -1,0 +1,13 @@
+time_s,temperature_c,humidity_pct,location
+0,18.0,40,lab
+1,18.4,41,lab
+2,19.0,43,lab
+3,19.8,44,roof
+4,20.5,46,roof
+5,21.0,,roof
+6,21.4,48,roof
+7,abc,50,field
+8,22.2,52,field
+9,22.8,53,field
+10,23.5,55,field
+11,24.0,56,field

@@ -1,0 +1,44 @@
+# Requirements checklist
+
+Each row is something the assignment asked for, the file that implements it, and a check a person can do by hand. Status is about this tree as it stands.
+
+Run:
+
+```bash
+cd . && ./.venv/bin/python main.py
+```
+
+| Status | Requirement | Where | Manual check |
+| --- | --- | --- | --- |
+| Done | Project virtual environment and pinned PyQt6, plus PyQtGraph for the charts that use it | `.venv`, `requirements.txt` | `./.venv/bin/python -c "import PyQt6, pyqtgraph"` from the project folder. |
+| Done | Window titled PyGraphy, home page, empty state “No dataset loaded”, status bar | `main.py`: `PyGraphyWindow`, `HomePage`, `_build_status` | Launch the command above. The title is PyGraphy. The first screen says “No dataset loaded”. The status bar says “No data set”, “0 rows”, and “Disconnected”. |
+| Done | Five graph choices: Line, Scatter, Bar, Histogram, Pie or donut. Choosing one shows that view | `main.py`: `GRAPH_KINDS`, `HomePage`, `_choose_kind`. `graph_view.py`: `GraphPanel.set_kind` | Click each home button, or use the Graph menu. The workspace label should read `View:` plus that name. |
+| Done | Line, scatter, bar, and histogram drawn with PyQtGraph. One series | `graph_view.py`: `_draw_xy`, `_draw_histogram`, `_draw_bars` | Load the sample. Switch those four views. Each plot has a single color and one set of values. |
+| Incomplete | Pie or donut via `PyQt6.QtCharts` | Not available. Fallback is `graph_view.py`: `DonutChart` | `import PyQt6.QtCharts` fails in this environment. Help → About PyGraphy says the donut is `QPainter`. Load the sample, choose Pie or donut, and confirm a ring with lab, roof, and field. |
+| Done | Named data-set tabs, each with its own records. Add, load a CSV, and close | `main.py`: `_new_dataset`, `_add_tab`, `_load_path`, `_close_tab`. `dataset.py`: `DataSet` | File → New data set. Load the sample into a second tab. Close one tab. The other tab’s rows should still be there. |
+| Done | Read-only table with headers and sorting. Sorting must not change plot or playback order | `main.py`: `RecordTableModel`, `RowOrderProxy`. `dataset.py`: `DataSet.rows` | Load the sample. Click the `time_s` header twice so large times are on top. The line graph should still run from 0 toward 11. The table cells are not editable. |
+| Done | CSV file dialog, plus `sample_data.csv` resolved from the application file, not the shell’s current directory | `dataset.py`: `sample_csv_path`, `load_csv`. `main.py`: `_open_csv_dialog`, `_load_sample` | File → Load sample CSV. The notice should name `sample_data.csv`. `sample_csv_path` uses `Path(__file__).resolve().parent`. |
+| Done | Arbitrary column names, numeric columns detected, original text kept separate from plotting numbers | `dataset.py`: `parse_cell`, `numeric_column_names`, `load_csv` | The sample header is `time_s,temperature_c,humidity_pct,location`. The table still shows `abc`. The line chart does not plot that cell as a number. |
+| Done | Blank, missing, and non-numeric cells get a message and a count of rows left out. An invalid X/Y pair is dropped together | `dataset.py`: `xy_series`, `exclusion_message`, `MISSING_WORDS` | On the sample line chart the note says one row was left out because a value was not a number, and that an invalid X/Y pair is dropped together. Row 6 (time 5) has a blank humidity. Row 8 (time 7) has `abc`. |
+| Done | Loading a CSV never modifies that file. Export asks before replacing a different file, and refuses the loaded path | `dataset.py`: `load_csv`, `write_records_csv`. `main.py`: `_export_csv`, `_confirm_overwrite` | Load the sample, then File → Export records as CSV and try to pick `sample_data.csv`. The warning should say PyGraphy will not modify the file you loaded. |
+| Done | Line and scatter: X and Y selectors. Histogram: numeric column and bin count. Bar: category, value, and count, sum, or mean. Title, axis labels, grid | `graph_view.py`: the control pages and `_redraw`. `main.py`: `_set_grid` | After loading the sample, change Y, the histogram column, the bin count, and the bar aggregation. Toggle Graph → Show grid. Pie hides the axis labels and the grid checkbox because a pie has neither. |
+| Done | Pie uses category counts or sums, rejects negatives, and explains a zero total | `dataset.py`: `pie_values`. `graph_view.py`: `_draw_pie` | Sample pie on count shows lab 3, roof 4, field 5. A column of zeros should say “The total is 0, so there is no slice to draw.” A negative total should say a pie cannot show a negative total. |
+| Done | One series is all the plotters draw | `graph_view.py`: `GraphPanel`, `DonutChart` | There is no control for a second series. See the incomplete row below. |
+| Done | Visible live serial panel: port list, baud default 115200, connect and disconnect. Separate from record playback | `serial_panel.py`: `SerialPanel`, `BAUD_RATES`. `main.py`: workspace layout | On the workspace, “Live serial capture” is on screen, not hidden in a menu. Baud shows 115200. “Record playback” is a different row. |
+| Done | Device text is a header line, then comma-separated rows. Rows append to the active tab. No `time.sleep`. GUI thread is not blocked | `serial_panel.py`: `_read_available`, `_handle_line`. `main.py`: `_on_serial_header`, `_on_serial_row` | Read `_read_available`: it copies waiting bytes and returns. The panel text shows the example `millis,temperature` then `1000,21.5`. |
+| Done | Prefer `PyQt6.QtSerialPort` when it imports. On failure, show the error and a dialout hint | `serial_panel.py`: `connect_port`, `_failure_text` | The module imports `QSerialPort` directly. pyserial is not in `requirements.txt`. A permission error string gains the dialout-group sentence. |
+| Not tested | Hardware session against a real board, including the `ttyACM0` port that can appear in the list | `serial_panel.py` | Refresh ports. If `ttyACM0` is listed, leave it alone unless the board is yours. Connect was not used as a hardware test, so capture, baud match, and dialout behavior on that port are unverified. |
+| Done | Record playback: `QTimer`, play, pause, reset, slider, speed. Reuse plot items. Stop when the data set changes. Named record playback | `graph_view.py`: `_build_playback`, `_play`, `_advance`, `show_dataset` | Load the sample. Press Reset, then Play. The marker moves in file order. Change tabs or load another set and the timer stops. The label says “Record playback”. |
+| Done | Stats for one numeric column: count, missing, min, max, mean, median, sample standard deviation with n−1 in the docstring | `dataset.py`: `column_stats`, `sample_standard_deviation`. `graph_view.py`: `_redraw_stats` | Stats for `temperature_c` on the sample leave out `abc`. The label ends with “divide by n-1”. The docstring on `sample_standard_deviation` says the same thing. |
+| Done | Export the current graph as PNG and the active records as CSV. Confirm before overwriting | `main.py`: `_export_png`, `_export_csv`, `_confirm_overwrite`. `graph_view.py`: `save_png` | Export each, point at an existing file, and confirm the question “Replace it?” appears. Cancel should leave that file alone. |
+| Done | Menus are only File, Graph, and Help. Empty state before any rows. Layouts, not fixed positions | `main.py`: `_build_menus`, `HomePage`, `_build_workspace` | The menu bar has those three menus. A new data set with no rows says “No columns yet” or “No rows yet”. |
+| Not built | More than one series | — | Incomplete on purpose for this version: one series was the assigned scope, and the plot code never adds a second one. |
+| Not built | Cloud upload, 3D plots, an expression evaluator, plugins, or hardware other than this serial panel | — | Those were out of scope. Nothing in the four Python modules implements them. |
+
+## How to read the incomplete rows
+
+The donut works. It is not a `QtCharts` series, because that module does not import, and the assignment said to use `QPainter` in that case.
+
+The serial panel works as a control. A listed `ttyACM0` port was not opened, so this checklist does not claim a successful reading from that device.
+
+One series is what the plots do today. A second line, a second bar group, or a second pie series is future work.

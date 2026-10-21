@@ -1,0 +1,75 @@
+/* PyGraphy appearance.
+
+   This is the only styling file. main.py loads it with load_style.
+
+   palette(window), palette(window-text), palette(button),
+   palette(highlight), palette(highlighted-text), and palette(base)
+   come from the desktop theme. Windows, macOS, and Linux fill those
+   in. Do not type a hex color here. A hex color would stay the same
+   in light mode and dark mode.
+
+   To change a font, edit font-size on QLabel#homeTitle.
+   To change spacing, edit padding on the mode buttons or min-height
+   on the graph choices. Save the file and start the app again.
+   A light or dark change from the computer is picked up while the
+   app is open. load_style in main.py reads this file again then.
+*/
+
+QLabel#homeTitle {
+    font-size: 22pt;
+    font-weight: 700;
+    color: palette(window-text);
+}
+
+QLabel#emptyState {
+    font-size: 13pt;
+    color: palette(window-text);
+}
+
+QLabel#sectionLabel {
+    font-weight: 600;
+    color: palette(window-text);
+}
+
+QLabel#pageHint {
+    color: palette(window-text);
+}
+
+QGroupBox {
+    font-weight: 600;
+    margin-top: 10px;
+    padding: 12px;
+    color: palette(window-text);
+}
+
+QGroupBox::title {
+    color: palette(window-text);
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+
+QPushButton#mode-graph,
+QPushButton#mode-manual,
+QPushButton#mode-serial {
+    font-weight: 600;
+    padding: 8px 18px;
+    min-height: 32px;
+}
+
+QPushButton#mode-graph:checked,
+QPushButton#mode-manual:checked,
+QPushButton#mode-serial:checked {
+    background-color: palette(highlight);
+    color: palette(highlighted-text);
+}
+
+QPushButton[graphChoice="true"] {
+    min-height: 64px;
+    padding: 16px;
+}
+
+QLabel#noticeLabel {
+    color: palette(window-text);
+    padding: 4px 0;
+}

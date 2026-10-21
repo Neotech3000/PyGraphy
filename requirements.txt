@@ -1,0 +1,15 @@
+# PyQt6 draws the window and reads USB serial (QtSerialPort).
+PyQt6==6.11.0
+# PyQtGraph draws line, scatter, bar, and histogram.
+# numpy and colorama are installed because pyqtgraph needs them.
+pyqtgraph==0.14.0
+numpy==2.5.4
+colorama==0.4.6
+# openpyxl reads .xlsx workbooks (Excel and a Google Sheets download).
+# et-xmlfile is installed because openpyxl needs it.
+openpyxl==3.1.5
+et-xmlfile==2.0.0
+# odfpy reads .ods workbooks (LibreOffice Calc).
+# defusedxml is installed because odfpy needs it.
+odfpy==1.4.1
+defusedxml==0.7.1
