@@ -38,6 +38,9 @@ from dataset import (
 pg.setConfigOption("antialias", True)
 
 KIND_PAGE = {"line": 0, "scatter": 0, "histogram": 1, "bar": 2, "pie": 3}
+# About 30 frames a second. Each frame moves a fraction of a row, then returns.
+PLAYBACK_FRAME_MS = 33
+PLAYBACK_ROWS_PER_SECOND = 2.0
 
 
 def _palette():
@@ -175,6 +178,8 @@ class GraphPanel(QWidget):
         self._kind = "line"
         self._grid = True
         self._playing = False
+        self._reveal = 0.0
+        self._painted_whole = -1
         self._column_signature = None
 
         self.option_stack = QStackedWidget()
@@ -386,7 +391,7 @@ class GraphPanel(QWidget):
 
         Record playback is put back where it was. This is not live acquisition.
         """
-        remembered = self.slider.value()
+        remembered = self._reveal
         was_playing = self._playing
         self._stop_timer()
         self._jump_slider_to_end()
@@ -395,10 +400,7 @@ class GraphPanel(QWidget):
             return self._render_current_chart()
         finally:
             count = 0 if self._dataset is None else len(self._dataset.rows)
-            self.slider.blockSignals(True)
-            self.slider.setRange(0, count)
-            self.slider.setValue(min(remembered, count))
-            self.slider.blockSignals(False)
+            self._set_slider_quiet(min(remembered, count))
             self._redraw()
             if was_playing and count > 0:
                 self._playing = True
@@ -719,13 +721,54 @@ class GraphPanel(QWidget):
         self.plot.setLabel("bottom", xlabel)
         self.plot.setLabel("left", ylabel)
         self.plot.showGrid(x=self._grid, y=self._grid, alpha=0.25)
-        if self._kind == "line":
-            self.line_item.setData(series.x_values, series.y_values)
-        else:
-            self.scatter_item.setData(series.x_values, series.y_values)
-        if series.x_values:
-            self.marker_item.setData([series.x_values[-1]], [series.y_values[-1]])
+        self._set_xy_points(series.x_values, series.y_values)
         return series.message
+
+    def _set_xy_points(self, x_values, y_values):
+        """Update the existing line, scatter, and marker. Do not create new items."""
+        if self._kind == "line":
+            self.line_item.setData(x_values, y_values)
+        else:
+            self.scatter_item.setData(x_values, y_values)
+        if x_values:
+            self.marker_item.setData([x_values[-1]], [y_values[-1]])
+        else:
+            self.marker_item.setData([], [])
+
+    def _draw_xy_moving(self, headers, rows, whole, frac):
+        """Draw a continuous line or scatter, gliding toward the next valid point."""
+        x_name = self.x_combo.currentText()
+        y_name = self.y_combo.currentText()
+        series = xy_series(headers, rows[:whole], x_name, y_name)
+        xs = list(series.x_values)
+        ys = list(series.y_values)
+        if frac > 0 and whole < len(rows):
+            nxt = xy_series(headers, [rows[whole]], x_name, y_name)
+            if nxt.x_values:
+                if xs:
+                    xs.append(xs[-1] + (nxt.x_values[0] - xs[-1]) * frac)
+                    ys.append(ys[-1] + (nxt.y_values[0] - ys[-1]) * frac)
+                else:
+                    xs.extend(nxt.x_values)
+                    ys.extend(nxt.y_values)
+        if whole != self._painted_whole:
+            title, xlabel, ylabel = self._suggest_labels(
+                f"{y_name} vs {x_name}",
+                x_name,
+                y_name,
+            )
+            self.plot.setTitle(title)
+            self.plot.setLabel("bottom", xlabel)
+            self.plot.setLabel("left", ylabel)
+            self.plot.showGrid(x=self._grid, y=self._grid, alpha=0.25)
+            total = len(rows)
+            message = series.message
+            if whole != total:
+                extra = f" Record playback is showing the first {whole} of {total} rows."
+                message = (message + extra).strip()
+            self.note_label.setText(message or "Showing every row in original order.")
+            self._painted_whole = whole
+        self._set_xy_points(xs, ys)
 
     def _draw_histogram(self, headers, rows):
         name = self.hist_combo.currentText()
@@ -802,10 +845,20 @@ class GraphPanel(QWidget):
 
     def _jump_slider_to_end(self):
         count = 0 if self._dataset is None else len(self._dataset.rows)
+        self._painted_whole = -1
         self.slider.blockSignals(True)
         self.slider.setRange(0, count)
-        self.slider.setValue(count)
         self.slider.blockSignals(False)
+        self._set_slider_quiet(count)
+
+    def _set_slider_quiet(self, value):
+        """Move the slider without asking _redraw to run."""
+        count = 0 if self._dataset is None else len(self._dataset.rows)
+        value = max(0, min(int(value), count))
+        self.slider.blockSignals(True)
+        self.slider.setValue(value)
+        self.slider.blockSignals(False)
+        self._reveal = float(value)
 
     def _stop_timer(self):
         self._timer.stop()
@@ -814,16 +867,17 @@ class GraphPanel(QWidget):
         self.pause_button.setEnabled(False)
 
     def _interval_ms(self):
-        speed = self.speed_combo.currentData() or 1.0
-        return max(40, int(500 / speed))
+        return PLAYBACK_FRAME_MS
 
     def _play(self):
         count = 0 if self._dataset is None else len(self._dataset.rows)
         if count == 0:
             self.playback_label.setText("Load rows before playing a recording.")
             return
-        if self.slider.value() >= count:
-            self.slider.setValue(0)
+        if self._reveal >= count - 0.001:
+            self._painted_whole = -1
+            self._set_slider_quiet(0)
+            self._redraw()
         self._playing = True
         self.play_button.setEnabled(False)
         self.pause_button.setEnabled(True)
@@ -836,21 +890,69 @@ class GraphPanel(QWidget):
 
     def _reset(self):
         self._stop_timer()
-        self.slider.setValue(0)
+        self._painted_whole = -1
+        self._set_slider_quiet(0)
+        self._redraw()
 
     def _advance(self):
-        count = 0 if self._dataset is None else len(self._dataset.rows)
-        if self.slider.value() >= count:
+        """Move the drawing forward one small step, then return.
+
+        The timer calls this. It must not sleep, and it must not build
+        new plot items. Line and scatter glide between points. Bar,
+        histogram, and pie update when another whole row is included.
+        """
+        if self._dataset is None:
             self._stop_timer()
-            self._update_playback_label()
             return
-        self.slider.setValue(self.slider.value() + 1)
+        count = len(self._dataset.rows)
+        speed = float(self.speed_combo.currentData() or 1.0)
+        step = PLAYBACK_ROWS_PER_SECOND * speed * (self._interval_ms() / 1000.0)
+        self._reveal += step
+        if self._reveal >= count:
+            self._reveal = float(count)
+            self._set_slider_quiet(count)
+            self._stop_timer()
+            self._painted_whole = -1
+            self._redraw()
+            return
+        self.slider.blockSignals(True)
+        self.slider.setValue(int(self._reveal))
+        self.slider.blockSignals(False)
+        self._paint_smooth()
+
+    def _paint_smooth(self):
+        """Refresh the current graph from _reveal without clearing it first."""
+        if self._dataset is None:
+            return
+        headers = self._dataset.headers
+        rows = self._dataset.rows
+        whole = min(len(rows), int(self._reveal))
+        frac = 0.0 if whole >= len(rows) else self._reveal - whole
+        if self._kind in ("line", "scatter"):
+            self._draw_xy_moving(headers, rows, whole, frac)
+        elif whole != self._painted_whole:
+            shown = rows[:whole]
+            if self._kind == "histogram":
+                message = self._draw_histogram(headers, shown)
+            elif self._kind == "bar":
+                message = self._draw_bars(headers, shown)
+            else:
+                message = self._draw_pie(headers, shown)
+            total = len(rows)
+            if whole != total:
+                extra = f" Record playback is showing the first {whole} of {total} rows."
+                message = (message + extra).strip()
+            self.note_label.setText(message or "Showing every row in original order.")
+            self._painted_whole = whole
+        self._update_playback_label()
 
     def _speed_changed(self):
         if self._timer.isActive():
             self._timer.start(self._interval_ms())
 
-    def _slider_moved(self, _value):
+    def _slider_moved(self, value):
+        self._reveal = float(value)
+        self._painted_whole = -1
         self._redraw()
 
     def _update_playback_label(self):
@@ -858,7 +960,9 @@ class GraphPanel(QWidget):
         position = self.slider.value()
         if count == 0:
             self.playback_label.setText("No rows")
-        elif position >= count and not self._playing:
+        elif self._playing:
+            self.playback_label.setText(f"Playing {position} of {count}")
+        elif position >= count:
             self.playback_label.setText(f"All {count} rows")
         else:
             self.playback_label.setText(f"Row {position} of {count}")

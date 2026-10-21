@@ -31,7 +31,7 @@ If the window gets narrower, the layouts reflow. A tiled window can clip long co
 
 `main()` builds the application, shows the window, and then calls `app.exec()`. That call is the event loop. Until it returns, Qt waits for clicks, key presses, timers, and serial bytes, and it calls the matching slot.
 
-Your slot must return. While it is running, the loop cannot paint or notice the next click. Record playback uses a `QTimer` for the same reason: `_advance` moves one row and returns, and the timer fires again later. Nothing in the app calls `time.sleep`.
+Your slot must return. While it is running, the loop cannot paint or notice the next click. Record playback uses a `QTimer` for the same reason: `_advance` moves the line a fraction of a row and returns. The timer fires about 30 times a second. Nothing in the app calls `time.sleep`.
 
 ## Why sorting the table does not change row order
 

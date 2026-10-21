@@ -15,9 +15,9 @@ Have these four spots ready in the editor:
 
 ## What to show, in order
 
-**0:00 — Home page.** Point at the title PyGraphy, the sentence “No dataset loaded”, and the five buttons. Mention File, Graph, and Help, and the status bar: no data set, 0 rows, Disconnected.
+**0:00 — Local file already on screen.** The window opens on the line graph of `sample_data.csv`. Point at the Sample tab, the table columns `time_s`, `temperature_c`, `humidity_pct`, and `location`, and the status bar row count. Drag the divider between the table and the graph. Mention File, Graph, and Help.
 
-**0:30 — Sample, no device.** File → Load sample CSV. A tab named Sample appears. Say the path comes from `sample_csv_path()`, next to the program, not from whichever folder the terminal was in. The notice says the file was not modified.
+**0:30 — Where that file lives.** Say the path comes from `sample_csv_path()`, next to the program, not from whichever folder the terminal was in. The notice names `sample_data.csv` and says the file was not modified. All graph types is the screen with the five graph buttons.
 
 **1:10 — Line and the left-out row.** The table still shows `abc` in `temperature_c`. The graph note says that row was left out and that a bad X and Y are dropped together. The line uses the original time order.
 
@@ -27,9 +27,9 @@ Have these four spots ready in the editor:
 
 **3:00 — Stats.** Leave the stats column on `temperature_c`. Read count, missing, min, max, mean, median, and sample stdev. The label says “divide by n-1”. That is `sample_standard_deviation`.
 
-**3:30 — Record playback.** Press Reset, then Play, then Pause. The orange marker walks the original rows. Change speed. This timer is not the serial port.
+**3:30 — Record playback.** Press Reset, then Play, then Pause. The marker glides along the original rows and the line stays on screen. Change speed. This timer is not the serial port.
 
-**4:10 — Live serial, without connecting.** Scroll to Live serial capture. Show the port list, baud 115200, Connect, and Disconnect. Read the example on the panel: a header line, then comma-separated rows (`millis,temperature`, then `1000,21.5`). If `ttyACM0` is listed, say you are not opening it in the demo.
+**4:10 — Live serial, without connecting.** Press Microcontroller. Show the port list, baud 115200, Connect, and Disconnect. Read the example on the panel: a header line, then comma-separated rows (`millis,temperature`, then `1000,21.5`). If `ttyACM0` is listed, say you are not opening it in the demo.
 
 **4:40 — The four functions.** Open them in the order below and read one sentence from each. Stop at five minutes even if a question starts. Take questions after.
 
@@ -41,7 +41,7 @@ Have these four spots ready in the editor:
 
 **`_read_available` (`serial_panel.py`).** “`readyRead` means bytes are already here. This copies them, splits lines on newlines, and returns. The first line is the header. The next lines are the comma-separated rows. It does not sleep, so the window can still paint.”
 
-**`_advance` (`graph_view.py`).** “The playback timer calls this about every half second at 1x. It adds one to the slider. The slider asks `_redraw` to show that many original rows on the same plot items. Switching data sets stops the timer in `show_dataset`.”
+**`_advance` (`graph_view.py`).** “The playback timer calls this about 30 times a second. Each call moves a fraction of a row and returns. The same plot items get new points, so the line stays continuous. Switching data sets stops the timer in `show_dataset`.”
 
 ## Design choices worth saying out loud
 

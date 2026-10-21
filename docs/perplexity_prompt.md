@@ -16,7 +16,7 @@ Do not rewrite the project. Do not replace these files. Do not add a Google acco
 
 The mode buttons are built in `PyGraphyWindow._build_mode_bar`. Their labels are Graph, Manual entry, and Microcontroller. Clicking one calls `PyGraphyWindow._set_mode`. That function only changes which page is visible. It does not call `replace_table` and it does not clear `dataset.rows`.
 
-Graph mode shows `self.stack`. That stack has two pages: `HomePage` (the first screen, “No dataset loaded”) and the workspace from `_build_workspace` (the tabs, the current plot, and record playback). Choosing Graph again shows whichever of those two pages was already open.
+Graph mode shows `self.stack`. That stack has two pages: the workspace from `_build_workspace` (the tabs, the divider, the current plot, and record playback) and `HomePage` (All graph types). Startup loads `sample_data.csv` through `_open_bundled_file` and shows the workspace. Choosing Graph again shows whichever of those two pages was already open.
 
 Manual entry mode shows the page from `_build_manual_page`. The column box is `column_name_edit`. The buttons call `_add_manual_column`, `_add_manual_row`, and `_delete_manual_row`. The editable grid is `manual_table`. `_bind_manual_view` points that grid at the active tab’s `RecordTableModel`, not at the sort proxy.
 
@@ -65,7 +65,7 @@ Copy table calls `_copy_table`. That calls `records_as_tsv`, which writes the he
 
 Typed cells, a CSV, an xlsx, an ods, a pasted table, and serial lines all become lists of strings on one `DataSet`. A tab owns that object. `dataset.rows` stays in the order the rows arrived: file order, paste order, or serial order.
 
-The graph table can sort. `RowOrderProxy.lessThan` compares the visible cells and reorders only that view. Manual entry shows the source model, so it stays in original order. The plot and record playback read `dataset.rows`, not the proxy. Playback shows a prefix of that list, controlled by the slider in `GraphPanel._visible_rows`.
+The graph table can sort. `RowOrderProxy.lessThan` compares the visible cells and reorders only that view. Manual entry shows the source model, so it stays in original order. The plot and record playback read `dataset.rows`, not the proxy. Playback walks a prefix of that list. `_reveal` in `GraphPanel` is how far the animation has moved, and `_visible_rows` still uses the slider when the graph is redrawn all at once.
 
 Switching Line, Scatter, Bar, Histogram, or Pie calls `_choose_kind`, which stores the kind and calls `GraphPanel.set_kind`. It does not replace the `DataSet` and it does not delete rows. The same list is drawn again with the new graph type. A bad pair is skipped by `xy_series` for line and scatter, but the text remains in the table.
 

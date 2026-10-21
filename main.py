@@ -231,12 +231,13 @@ class HomePage(QWidget):
         self.setObjectName("homePage")
         title = QLabel("PyGraphy")
         title.setObjectName("homeTitle")
-        empty = QLabel(
-            "No dataset loaded. Next: choose a graph below, "
-            "or use File → Load sample CSV. No device is required."
+        self.intro = QLabel(
+            "sample_data.csv is in the same folder as this program. "
+            "PyGraphy loads it when the window opens. "
+            "Next: choose a graph. The table and the plot use those rows."
         )
-        empty.setObjectName("emptyState")
-        empty.setWordWrap(True)
+        self.intro.setObjectName("emptyState")
+        self.intro.setWordWrap(True)
         hint = QLabel(
             "The buttons above switch among Graph, Manual entry, and Microcontroller. "
             "Graph shows this page and the current plot."
@@ -260,7 +261,7 @@ class HomePage(QWidget):
         layout.setSpacing(14)
         layout.addStretch(1)
         layout.addWidget(title)
-        layout.addWidget(empty)
+        layout.addWidget(self.intro)
         layout.addWidget(hint)
         layout.addWidget(choices)
         layout.addStretch(2)
@@ -309,6 +310,7 @@ class PyGraphyWindow(QMainWindow):
         self._build_status()
         self._connect_signals()
         self._set_mode("graph")
+        self._open_bundled_file()
         self._update_status()
 
     def _build_workspace(self):
@@ -316,10 +318,13 @@ class PyGraphyWindow(QMainWindow):
         header = QHBoxLayout()
         self.view_label = QLabel("View: Line")
         self.view_label.setObjectName("sectionLabel")
+        divider_hint = QLabel("Drag the divider between the table and the graph.")
+        divider_hint.setObjectName("pageHint")
         home_button = QPushButton("All graph types")
         home_button.clicked.connect(self._show_home)
         header.addWidget(self.view_label)
         header.addStretch(1)
+        header.addWidget(divider_hint)
         header.addWidget(home_button)
 
         self.tabs = QTabWidget()
@@ -328,13 +333,20 @@ class PyGraphyWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
 
         self.graph_panel = GraphPanel()
-        self.splitter = QSplitter()
+        self.graph_panel.setMinimumWidth(280)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setObjectName("tableGraphDivider")
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(10)
+        self.splitter.setOpaqueResize(True)
         self.tabs.setMinimumWidth(260)
         self.splitter.addWidget(self.tabs)
         self.splitter.addWidget(self.graph_panel)
         self.splitter.setStretchFactor(0, 2)
         self.splitter.setStretchFactor(1, 3)
         self.splitter.setSizes([420, 580])
+        handle = self.splitter.handle(1)
+        handle.setToolTip("Drag this divider to resize the table and the graph.")
 
         layout = QVBoxLayout(page)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -690,6 +702,23 @@ class PyGraphyWindow(QMainWindow):
             from_home_starts_new=False,
             label="pasted table",
         )
+
+    def _open_bundled_file(self):
+        """Show sample_data.csv from the application folder as soon as the window opens.
+
+        sample_csv_path() uses the folder of dataset.py, so the file is found
+        even if the terminal was started somewhere else.
+        """
+        path = sample_csv_path()
+        if not path.is_file():
+            self.home.intro.setText(
+                f"Could not find {path.name} next to the program. "
+                "Put that file in the same folder, then start PyGraphy again."
+            )
+            self._set_notice(f"Could not find the local data file at {path}.")
+            self.stack.setCurrentWidget(self.home)
+            return
+        self._load_path(path, preferred_name="Sample")
 
     def _load_sample(self):
         path = sample_csv_path()
@@ -1058,7 +1087,10 @@ class PyGraphyWindow(QMainWindow):
             self,
             "About PyGraphy",
             "PyGraphy plots one series from each data set.\n\n"
-            "Graph mode shows the home page and the current plot.\n"
+            "It opens sample_data.csv from the same folder as the program.\n"
+            "The table, the graphs, and record playback use those rows.\n"
+            "Drag the divider between the table and the graph to resize them.\n\n"
+            "Graph mode shows the plot and, from All graph types, the home page.\n"
             "Manual entry edits the same in-memory rows. Closing the app does not save them.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
             "Line, scatter, bar, and histogram use PyQtGraph.\n"

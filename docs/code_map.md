@@ -26,7 +26,7 @@ The window starts in `main()`. That function builds a `QApplication`, creates `P
 
 - `main` creates the application and the window.
 - `PyGraphyWindow` is the `QMainWindow`. `_choose_kind` switches Line, Scatter, Bar, Histogram, or Pie or donut and shows the workspace. `_load_sample` and `_load_path` fill a tab from a CSV. `_on_serial_header` and `_on_serial_row` append live rows to the active tab. `_connect_signals` is the list of signal-to-slot wires.
-- `HomePage` is the first screen. It shows “No dataset loaded” and one button per graph type.
+- The window opens on the workspace with `sample_data.csv` already loaded. `HomePage` is the “All graph types” screen. It names that file and offers one button per graph type.
 - `DataSetTab` is one closable tab: a `DataSet` plus a table.
 - `RecordTableModel` is read-only. It reads `dataset.rows` and never reorders that list. `replaced` reloads the whole table. `added_row` inserts one serial row.
 - `RowOrderProxy` sorts only what you see. `lessThan` compares two cells. Numbers compare as numbers. Other text compares in lowercase.
@@ -83,7 +83,7 @@ DataSet.rows  <----------------  adopt_header / append_row
     |
     +--> column_stats --> stats label
     |
-    +--> QTimer --> _advance --> slider --> same plot items, fewer rows
+    +--> QTimer --> _advance --> same plot items, a little further along the rows
 ```
 
 Sorting the table calls `RowOrderProxy.lessThan`. That compares cells for display. `DataSet.rows` is the list playback and the plot read.
@@ -98,8 +98,8 @@ Blank, missing (`na`, `n/a`, `null`, `none`, `nan`), and other non-numeric text 
 
 **Sample path.** Change `sample_csv_path()` in `dataset.py`. It returns `Path(__file__).resolve().parent / "sample_data.csv"`. `__file__` is `dataset.py`, so the CSV is found next to the source even if the shell’s current directory is somewhere else. Keep the file beside the modules, or change both the string and the file you ship.
 
-**Graph type.** The five choices live in `GRAPH_KINDS` at the top of `main.py`. The window starts on the home page; the workspace default before you click is `self._kind = "line"` in `PyGraphyWindow.__init__`. `_choose_kind` stores the choice, checks the Graph menu, and calls `GraphPanel.set_kind`. A new kind also needs a branch in `GraphPanel._redraw` and, if it needs different controls, an entry in `KIND_PAGE`.
+**Graph type.** The five choices live in `GRAPH_KINDS` at the top of `main.py`. Startup calls `_open_bundled_file`, which loads `sample_data.csv` and shows the line view. `_choose_kind` stores the choice, checks the Graph menu, and calls `GraphPanel.set_kind`. A new kind also needs a branch in `GraphPanel._redraw` and, if it needs different controls, an entry in `KIND_PAGE`.
 
 **Serial baud.** The choices are `BAUD_RATES` in `serial_panel.py`. The default is `self.baud_combo.setCurrentText("115200")`. `connect_port` reads whatever the combo shows and passes it to `setBaudRate`. The expected device text is a header line, then comma-separated rows, such as `millis,temperature` followed by `1000,21.5`.
 
-**Playback timer.** In `GraphPanel._interval_ms` in `graph_view.py`, the delay is `max(40, int(500 / speed))` milliseconds. At 1x that is 500 ms per row. The speeds in the combo are 0.5x, 1x, 2x, and 4x. `GraphPanel.__init__` creates the `QTimer` and connects `timeout` to `_advance`. `_play` starts the timer. `_advance` adds one to the slider, and the slider’s `valueChanged` signal calls `_redraw`.
+**Playback timer.** `GraphPanel._interval_ms` in `graph_view.py` returns `PLAYBACK_FRAME_MS` (33). At 1x, `_advance` moves `PLAYBACK_ROWS_PER_SECOND` (2) rows each second, a fraction of a row per tick. The speeds in the combo are 0.5x, 1x, 2x, and 4x. `GraphPanel.__init__` creates the `QTimer` and connects `timeout` to `_advance`. `_play` starts the timer. `_advance` updates the existing line, scatter, or marker with `setData`. It does not sleep, and it does not create a new plot item.
