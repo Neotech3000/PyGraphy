@@ -32,6 +32,16 @@ On Omarchy, the window uses the active theme's background, text, and accent, and
 
 File, Graph, and Help are the menus. The status bar shows the data-set name, the row count, and whether USB serial is connected.
 
+## Screenshots
+
+![Home screen with the graph-type buttons](docs/screenshots/graph-chooser.png)
+
+![Two graphs side by side with the data table and stats](docs/screenshots/graph-workspace.png)
+
+![Manual entry table editor](docs/screenshots/manual-entry-mode.png)
+
+![Live serial capture panel](docs/screenshots/microcontroller-mode.png)
+
 ## Requirements
 
 - Python 3.10 or newer.
