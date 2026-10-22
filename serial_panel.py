@@ -141,7 +141,10 @@ class SerialPanel(QGroupBox):
         if not opened:
             self.failed.emit(self._failure_text())
             return
-        # Some boards stay in reset while DTR is held low. Release it so they can boot.
+        # This asserts the data terminal ready line. It does not hold the
+        # line low, so a board that boots while the line is low still
+        # starts. Some boards reset when the line changes, so the board
+        # decides whether that matters.
         self._port.setDataTerminalReady(True)
         self._buffer = ""
         self._saw_header = False

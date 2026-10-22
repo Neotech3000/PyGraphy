@@ -28,7 +28,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 | `sample_data.csv` | Bundled rows so every graph type works with no board attached. |
 | `style.qss` | Fonts and spacing. Colors come from `palette()`, not from hex codes in this file. |
 
-`requirements.txt` pins PyQt6, PyQtGraph, openpyxl, and odfpy, plus the libraries those packages need. `pyproject.toml` names the same Python modules and the `pygraphy` command.
+`requirements.txt` pins PyQt6, PyQtGraph, openpyxl, and odfpy, plus the libraries those packages need. `pyproject.toml` names the same Python modules and the `pygraphy` command. The two files are kept apart on purpose: `requirements.txt` is the tested set of exact versions, and `pyproject.toml` is the lowest versions that work. `pyproject.toml` also has a `dev` extra with pytest.
 
 ## Main classes and functions
 
@@ -71,7 +71,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 
 - `SerialPanel` lists ports, chooses a baud rate, and connects or disconnects.
 - `refresh_ports` uses `QSerialPortInfo.availablePorts()`. The names are whatever that computer exposes.
-- `connect_port` opens the port for read and write and releases DTR so a typical board can leave reset.
+- `connect_port` opens the port for read and write and asserts the data terminal ready (DTR) line. It does not hold the line low.
 - `readyRead` is connected to `_read_available`. That slot copies bytes already in Qt's buffer, splits complete lines, and returns.
 - `_handle_line` treats the first line as a header (`header_received`) and later lines as rows (`row_received`).
 - `_failure_text` adds a dialout-group hint when the error is a permission error.

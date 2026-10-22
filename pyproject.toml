@@ -11,6 +11,14 @@ dependencies = ["PyQt6>=6.6", "pyqtgraph>=0.14", "openpyxl>=3.1", "odfpy>=1.4"]
 [project.gui-scripts]
 pygraphy = "main:main"
 
+# requirements.txt pins the exact versions that were tested. The list above
+# says the lowest versions that work, so a fresh install can pick up newer
+# ones. Both files are kept on purpose: one is a floor, the other is a
+# repeatable environment. Install the pins with
+# "pip install -r requirements.txt" when you want the tested set.
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [tool.setuptools.data-files]
 "share/pygraphy" = [
     "sample_data.csv",

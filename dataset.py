@@ -11,11 +11,18 @@ text alone.
 
 import csv
 import io
+import math
 import sys
 from pathlib import Path
 
 
 MISSING_WORDS = {"na", "n/a", "null", "none", "nan"}
+
+# A .ods sheet can repeat a row thousands of times. Reading every copy
+# would fill the table with the same line, so a sheet is cut short at
+# these limits and the note says how much was left out.
+ODS_MAX_ROWS = 100_000
+ODS_MAX_COLUMNS = 1_024
 
 
 def bundled_path(filename):
@@ -49,6 +56,10 @@ def parse_cell(text):
 
     Returns ("number", float), ("blank", None), ("missing", None),
     or ("text", None).
+
+    A value that is not a finite number, such as "inf" or "+nan", is
+    reported as missing. A graph cannot draw it, and an infinite axis
+    range stops the whole program with an error.
     """
     raw = text.strip()
     if raw == "":
@@ -56,24 +67,46 @@ def parse_cell(text):
     if raw.lower() in MISSING_WORDS:
         return "missing", None
     try:
-        return "number", float(raw)
+        value = float(raw)
     except ValueError:
         return "text", None
+    if not math.isfinite(value):
+        return "missing", None
+    return "number", value
 
 
-def _unique_headers(headers):
-    seen = {}
+def unique_headers(headers):
+    """Make every header name different.
+
+    A name that is already used gets a number: a, a_2, a_3. The number
+    skips names that are taken, so a file with a, a_2, a does not end
+    up with two columns called a_2. Returns (names, renamed).
+    """
     names = []
+    used = set()
     renamed = False
     for header in headers:
-        name = header.strip() or "column"
-        seen[name] = seen.get(name, 0) + 1
-        if seen[name] == 1:
-            names.append(name)
-        else:
-            names.append(f"{name}_{seen[name]}")
+        raw = header.strip() or "column"
+        candidate = raw
+        if candidate in used:
+            number = 2
+            while f"{raw}_{number}" in used:
+                number += 1
+            candidate = f"{raw}_{number}"
+        used.add(candidate)
+        if candidate != raw:
             renamed = True
+        names.append(candidate)
     return names, renamed
+
+
+def adopt_header_of(cells):
+    """The column names a header line would give.
+
+    This is what a serial header line or a file header turns into.
+    """
+    names, _renamed = unique_headers([str(cell).strip() for cell in cells])
+    return names
 
 
 def _cell_to_text(value):
@@ -105,13 +138,13 @@ def _trim_trailing_blanks(cells):
     return trimmed
 
 
-def _table_from_rows(raw_rows, source_name, untouched):
+def _table_from_rows(raw_rows, source_name, untouched, extra=""):
     """Build headers and string rows. ``untouched`` says the source was not written."""
     if not raw_rows or not any(str(cell).strip() for cell in raw_rows[0]):
         raise ValueError("The table has no header row.")
 
     header_cells = [str(cell) for cell in raw_rows[0]]
-    headers, renamed = _unique_headers(header_cells)
+    headers, renamed = unique_headers(header_cells)
     width = len(headers)
     rows = []
     short_rows = 0
@@ -139,6 +172,8 @@ def _table_from_rows(raw_rows, source_name, untouched):
         note += f" {short_rows} row(s) were short, so the missing cells are blank."
     if long_rows:
         note += f" {long_rows} row(s) had extra cells, which were ignored."
+    if extra:
+        note += extra
     return headers, rows, note
 
 
@@ -245,6 +280,8 @@ def load_ods(path):
     cell_tag = TableCell().qname
     covered_tag = CoveredTableCell().qname
     raw_rows = []
+    rows_left_out = 0
+    cells_left_out = 0
     for node in sheet.childNodes:
         if getattr(node, "qname", None) != row_tag:
             continue
@@ -263,20 +300,29 @@ def load_ods(path):
             pieces.pop()
         cells = []
         for text, repeat in pieces:
-            count = repeat
-            if count > 256:
-                count = 256
-            cells.extend([text] * count)
+            room = ODS_MAX_COLUMNS - len(cells)
+            if repeat > room:
+                cells_left_out += repeat - room
+                repeat = max(room, 0)
+            cells.extend([text] * repeat)
         if not cells:
             continue
         row_repeat = _ods_repeat(node, "numberrowsrepeated")
-        if row_repeat > 100:
-            row_repeat = 100
+        added = 0
         for _copy in range(row_repeat):
+            if len(raw_rows) >= ODS_MAX_ROWS:
+                break
             raw_rows.append(list(cells))
+            added += 1
+        rows_left_out += row_repeat - added
     while raw_rows and not any(cell.strip() for cell in raw_rows[0]):
         raw_rows.pop(0)
-    return _table_from_rows(raw_rows, path.name, "The file was not modified.")
+    extra = ""
+    if rows_left_out:
+        extra += f" {rows_left_out} row(s) were left out because the sheet is too long."
+    if cells_left_out:
+        extra += f" {cells_left_out} cell(s) were left out because a row is too wide."
+    return _table_from_rows(raw_rows, path.name, "The file was not modified.", extra)
 
 
 def load_table(path):
@@ -607,7 +653,7 @@ class DataSet:
     def replace_table(self, headers, rows):
         self.headers = list(headers)
         self.rows = [list(row) for row in rows]
-        self._prefer_default_columns()
+        self.prefer_default_columns()
 
     def clear_memory(self):
         """Drop this tab's rows and headers. Does not open or write a file."""
@@ -636,10 +682,10 @@ class DataSet:
         headers = [cell.strip() for cell in cells]
         if not headers or not any(headers):
             return "The serial header line was empty."
-        headers, _renamed = _unique_headers(headers)
+        headers, _renamed = unique_headers(headers)
         if not self.headers:
             self.headers = headers
-            self._prefer_default_columns()
+            self.prefer_default_columns()
             return None
         if headers == self.headers:
             return None
@@ -674,7 +720,7 @@ class DataSet:
         self.headers.append(candidate)
         for row in self.rows:
             row.append("")
-        self._prefer_default_columns()
+        self.prefer_default_columns()
         return candidate
 
     def add_blank_row(self):
@@ -703,7 +749,14 @@ class DataSet:
         row[column_index] = "" if text is None else str(text)
         return None
 
-    def _prefer_default_columns(self):
+    def prefer_default_columns(self):
+        """Fill the empty column choices with sensible defaults.
+
+        A choice the user already made is left alone. This is called
+        whenever the set of numeric columns changes, so a serial header
+        that arrives before any numbers still ends up with a real X and
+        Y column once the rows arrive.
+        """
         numbers = numeric_column_names(self.headers, self.rows)
         words = [name for name in self.headers if name not in numbers]
         measure = numbers[1] if len(numbers) > 1 else (numbers[0] if numbers else "")
