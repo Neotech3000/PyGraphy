@@ -2,6 +2,11 @@
 
 Plots and record playback read ``rows`` from top to bottom. Sorting the
 table uses a separate view, so it must not reorder this list.
+
+``load_csv``, ``load_xlsx``, ``load_ods``, and ``load_delimited_text``
+turn a file or a paste into lists of strings. They do not write the
+source. Plot helpers parse those strings later and leave the stored
+text alone.
 """
 
 import csv
@@ -443,8 +448,8 @@ def histogram_bins(values, bin_count):
     return centers, counts, width * 0.9
 
 
-def category_aggregate(headers, rows, category, value_name, how):
-    """Group rows by category. ``how`` is count, sum, or mean.
+def category_aggregate(headers, rows, category, value_name, aggregation):
+    """Group rows by category. ``aggregation`` is count, sum, or mean.
 
     Category labels stay in the order they first appear, which follows
     the original file order rather than alphabetical order.
@@ -452,7 +457,7 @@ def category_aggregate(headers, rows, category, value_name, how):
     """
     if category not in headers:
         return [], [], "Choose a category column."
-    if how != "count" and value_name not in headers:
+    if aggregation != "count" and value_name not in headers:
         return [], [], "Choose a value column."
 
     totals = {}
@@ -465,7 +470,7 @@ def category_aggregate(headers, rows, category, value_name, how):
             totals[label] = 0.0
             counts[label] = 0
             order.append(label)
-        if how == "count":
+        if aggregation == "count":
             counts[label] += 1
             continue
         kind, number = parse_cell(_cell(headers, row, value_name))
@@ -483,12 +488,12 @@ def category_aggregate(headers, rows, category, value_name, how):
     labels = []
     numbers = []
     for label in order:
-        if how == "count":
+        if aggregation == "count":
             labels.append(label)
             numbers.append(float(counts[label]))
         elif counts[label] == 0:
             continue
-        elif how == "sum":
+        elif aggregation == "sum":
             labels.append(label)
             numbers.append(totals[label])
         else:
@@ -500,8 +505,10 @@ def category_aggregate(headers, rows, category, value_name, how):
 
 def pie_values(headers, rows, category, mode, value_name):
     """Category totals for a pie or donut. Negatives and a zero total are refused."""
-    how = "count" if mode == "count" else "sum"
-    labels, numbers, message = category_aggregate(headers, rows, category, value_name, how)
+    aggregation = "count" if mode == "count" else "sum"
+    labels, numbers, message = category_aggregate(
+        headers, rows, category, value_name, aggregation
+    )
     if any(number < 0 for number in numbers):
         return [], [], (
             "Pie and donut charts cannot show a negative total. "

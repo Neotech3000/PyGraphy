@@ -21,6 +21,13 @@ BAUD_RATES = ["9600", "19200", "38400", "57600", "115200", "230400"]
 
 
 class SerialPanel(QGroupBox):
+    """Port list, baud rate, and Connect / Disconnect.
+
+    The first complete line after Connect is the header. Later lines are
+    comma-separated rows. ``header_received`` and ``row_received`` carry
+    those cells. The window decides which data set they join.
+    """
+
     header_received = pyqtSignal(list)
     row_received = pyqtSignal(list)
     link_changed = pyqtSignal(str)

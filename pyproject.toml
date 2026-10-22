@@ -19,7 +19,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["main", "dataset", "graph_view", "serial_panel"]
+py-modules = ["main", "appearance", "dataset", "graph_view", "serial_panel"]
 
 [tool.ruff]
 line-length = 100

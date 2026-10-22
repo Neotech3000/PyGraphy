@@ -1,3 +1,8 @@
+# Template. Copy to ~/.local/share/applications/pygraphy.desktop.
+# This file does not name a home directory or a user.
+# Exec is the pygraphy command on PATH. To point at one checkout instead:
+#   Exec=~/PyGraphy/.venv/bin/pygraphy
+#   Path=~/PyGraphy
 [Desktop Entry]
 Type=Application
 Name=PyGraphy
