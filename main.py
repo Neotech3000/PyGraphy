@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -62,12 +63,22 @@ from dataset import (
     load_delimited_text,
     load_table,
     parse_cell,
+    bundled_path,
     records_as_tsv,
     sample_csv_path,
     write_records_csv,
 )
 from graph_view import GRAPH_KINDS, GraphBoard, build_view_all_page
 from serial_panel import SerialPanel
+
+
+# Each example is a CSV beside the program, a menu label, a graph type,
+# and the panel name. Startup does not open these files.
+EXAMPLES = (
+    ("example_lake.csv", "Lake level (line)", "line", "Lake level"),
+    ("example_stairs.csv", "Stair steps (step)", "step", "Stair steps"),
+    ("example_cities.csv", "City visitors (bar)", "bar", "City visitors"),
+)
 
 
 class RecordTableModel(QAbstractTableModel):
@@ -597,6 +608,7 @@ class PyGraphyWindow(QMainWindow):
         paste_action.triggered.connect(self._paste_table)
         sample_action = QAction("Load sample CSV", self)
         sample_action.triggered.connect(self._load_sample)
+        examples_menu = self._build_examples_menu()
         export_png = QAction("Export graph as PNG…", self)
         export_png.triggered.connect(self._export_png)
         export_csv = QAction("Export records as CSV…", self)
@@ -619,6 +631,8 @@ class PyGraphyWindow(QMainWindow):
             quit_action,
         ):
             file_menu.addAction(action)
+            if action is sample_action:
+                file_menu.addMenu(examples_menu)
             if action in (sample_action, export_csv, close_action):
                 file_menu.addSeparator()
 
@@ -876,6 +890,53 @@ class PyGraphyWindow(QMainWindow):
         self._bind_manual_view()
         self._update_status()
         self._set_notice(f"Cleared {panel.name} in memory. Other graphs were not changed.")
+
+    def _build_examples_menu(self):
+        """File → Examples. Each item opens one bundled table in a new graph."""
+        menu = QMenu("Examples", self)
+        menu.setObjectName("examplesMenu")
+        self.example_actions = []
+        for filename, label, kind, name in EXAMPLES:
+            action = QAction(label, self)
+            action.setData(filename)
+            action.triggered.connect(
+                lambda _checked=False, filename=filename, kind=kind, name=name: (
+                    self._load_example(filename, kind, name)
+                )
+            )
+            menu.addAction(action)
+            self.example_actions.append(action)
+        return menu
+
+    def _load_example(self, filename, kind, name):
+        """Load one example into a new graph. Other graphs keep their rows."""
+        path = bundled_path(filename)
+        if not path.is_file():
+            self._show_error(
+                f"Could not find {filename} next to the program. The example was not loaded."
+            )
+            return
+        try:
+            headers, rows, note = load_csv(path)
+        except (OSError, ValueError, csv.Error) as error:
+            self._show_error(f"Could not read {filename}: {error}")
+            return
+        panel = self.graph_board.add_panel(name)
+        self._replace_panel_rows(
+            panel,
+            headers,
+            rows,
+            note,
+            source_path=path,
+            preferred_name=name,
+            label=filename,
+        )
+        panel.set_kind(kind)
+        self._set_mode("graph")
+        self._set_notice(
+            f"Loaded {filename} into {panel.name} as a {kind} graph. "
+            "Other graphs were not changed."
+        )
 
     def _load_sample(self):
         path = sample_csv_path()
@@ -1391,16 +1452,22 @@ class PyGraphyWindow(QMainWindow):
             "Import table on a graph loads a csv, xlsx, or ods file into that graph only.\n"
             "File → Paste table goes into the selected graph. The label says Selected.\n"
             "File → Load sample CSV reads sample_data.csv from the program folder.\n"
+            "File → Examples opens a bundled table in a new graph. "
+            "Startup does not load those files.\n"
             "Clear table forgets the selected graph's table and does not change that file.\n"
             "Drag the divider between the table and the graphs to resize them.\n\n"
             "Graph mode shows the graphs and, from All graph types, the home page.\n"
-            "View all shows every graph together. Play on that page moves them all.\n"
+            "View all shows every graph together. Play draws each line forward, "
+            "then starts again at the first point.\n"
             "Manual entry edits the table you are looking at. Add table starts an empty one.\n"
             "The Tables tabs on that page switch tables. The grid shows only the selected one.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
-            "Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.\n"
+            "Line, scatter, area, step, filled step, stem, bar, horizontal bar, "
+            "and histogram use PyQtGraph.\n"
             "Pie or donut is drawn with QPainter. PyQtGraph does not draw "
             "pies well, and PyQt6.QtCharts is not installed.\n"
+            "Filled step is a stair with the area under it. Stem is a vertical "
+            "line from zero to each point.\n"
             "Box plots and candlesticks are not included, because PyQtGraph "
             "does not draw them from one line or one bar item.\n\n"
             "USB serial is read in the window's event loop. "

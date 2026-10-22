@@ -12,7 +12,13 @@ dependencies = ["PyQt6>=6.6", "pyqtgraph>=0.14", "openpyxl>=3.1", "odfpy>=1.4"]
 pygraphy = "main:main"
 
 [tool.setuptools.data-files]
-"share/pygraphy" = ["sample_data.csv", "style.qss"]
+"share/pygraphy" = [
+    "sample_data.csv",
+    "example_lake.csv",
+    "example_stairs.csv",
+    "example_cities.csv",
+    "style.qss",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

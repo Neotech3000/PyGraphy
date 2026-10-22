@@ -50,16 +50,19 @@ from dataset import (
 
 pg.setConfigOption("antialias", True)
 
-# Area fills a line down to zero. Step draws the same points as stairs.
-# Horizontal bar uses PyQtGraph's BarGraphItem. Box plots and candlesticks
-# are not listed: PyQtGraph does not draw those from one line or one bar
-# item. Matplotlib and QtCharts are not used.
+# Area fills a line down to zero. Step draws stairs. Filled step is that
+# stair with the area under it. Stem draws a vertical line from zero to
+# each point. Box plots and candlesticks are not listed: PyQtGraph does
+# not draw those from one line or one bar item. Matplotlib and QtCharts
+# are not used.
 # KIND_PAGE must have one entry for every kind, or that type has no controls.
 GRAPH_KINDS = (
     ("line", "Line"),
     ("scatter", "Scatter"),
     ("area", "Area"),
     ("step", "Step"),
+    ("fstep", "Filled step"),
+    ("stem", "Stem"),
     ("bar", "Bar"),
     ("hbar", "Horizontal bar"),
     ("histogram", "Histogram"),
@@ -72,6 +75,8 @@ KIND_PAGE = {
     "scatter": 0,
     "area": 0,
     "step": 0,
+    "fstep": 0,
+    "stem": 0,
     "histogram": 1,
     "bar": 2,
     "hbar": 2,
@@ -87,8 +92,16 @@ LOOK_COLORS = (
     ("Orange", QColor(Qt.GlobalColor.darkYellow)),
     ("Yellow", QColor(Qt.GlobalColor.yellow)),
 )
-LINE_KINDS = ("line", "area", "step")
-XY_KINDS = ("line", "scatter", "area", "step")
+LINE_KINDS = ("line", "area", "step", "fstep")
+STEP_KINDS = ("step", "fstep")
+XY_KINDS = ("line", "scatter", "area", "step", "fstep", "stem")
+SPEED_CHOICES = (
+    ("0.25x", 0.25),
+    ("0.5x", 0.5),
+    ("1x", 1.0),
+    ("2x", 2.0),
+    ("4x", 4.0),
+)
 # About 30 frames a second. Each frame moves a fraction of a row, then returns.
 PLAYBACK_FRAME_MS = 33
 PLAYBACK_ROWS_PER_SECOND = 2.0
@@ -121,24 +134,45 @@ def view_all_shape(count):
     return columns, rows
 
 
-def _loop_point(xs, ys, reveal, count):
-    """A point on the closed path through ``xs`` and ``ys``.
+def wrap_playhead(phase, count):
+    """Return where the pen is, always moving forward.
 
-    The last step walks back to the first point, so a playhead that
-    passes the end arrives at the start instead of jumping.
+    ``phase`` only grows. When it passes the last row, this jumps back
+    to the start of the series. It does not walk backward along the line.
     """
-    if not xs or count <= 0:
-        return None, None
-    if len(xs) == 1:
-        return xs[0], ys[0]
-    travel = (float(reveal) % count) / count * len(xs)
-    index = int(travel) % len(xs)
-    frac = travel - int(travel)
-    nxt = (index + 1) % len(xs)
-    return (
-        xs[index] + (xs[nxt] - xs[index]) * frac,
-        ys[index] + (ys[nxt] - ys[index]) * frac,
-    )
+    if count <= 0:
+        return 0.0
+    phase = float(phase)
+    if phase < 0.0:
+        return 0.0
+    if phase >= count:
+        return phase % count
+    return phase
+
+
+def step_dot(x0, y0, x1, y1, frac):
+    """Move the step dot along a stair, not along the diagonal.
+
+    The first half of ``frac`` goes horizontally from ``x0`` to ``x1``.
+    The second half goes vertically from ``y0`` to ``y1``.
+    Returns ``(dot_x, dot_y, extra_x, extra_y)``. The extra lists are the
+    new corners after ``(x0, y0)``. Neighboring corners share an x or a y.
+    """
+    frac = max(0.0, min(1.0, float(frac)))
+    if frac <= 0.0:
+        return x0, y0, [], []
+    if frac < 0.5:
+        x = x0 + (x1 - x0) * (frac / 0.5)
+        return x, y0, [x], [y0]
+    y = y0 + (y1 - y0) * ((frac - 0.5) / 0.5)
+    return x1, y, [x1, x1], [y0, y]
+
+
+def fill_speed_combo(combo):
+    """Speed choices. The box opens at 0.5x."""
+    for label, value in SPEED_CHOICES:
+        combo.addItem(label, value)
+    combo.setCurrentText("0.5x")
 
 
 def _finite_span(low, high):
@@ -567,11 +601,7 @@ class GraphPanel(QFrame):
         self.slider.valueChanged.connect(self._slider_moved)
         self.slider.sliderPressed.connect(self._pause)
         self.speed_combo = QComboBox()
-        self.speed_combo.addItem("0.5x", 0.5)
-        self.speed_combo.addItem("1x", 1.0)
-        self.speed_combo.addItem("2x", 2.0)
-        self.speed_combo.addItem("4x", 4.0)
-        self.speed_combo.setCurrentText("1x")
+        fill_speed_combo(self.speed_combo)
         self.speed_combo.currentIndexChanged.connect(self._speed_changed)
         self.playback_label = QLabel("All rows")
         row.addWidget(title)
@@ -681,7 +711,7 @@ class GraphPanel(QFrame):
                 return NEUTRAL_RANGE, NEUTRAL_RANGE
             y_low = min(series.y_values)
             y_high = max(series.y_values)
-            if self._kind == "area":
+            if self._kind in ("area", "fstep", "stem"):
                 y_low = min(y_low, 0.0)
                 y_high = max(y_high, 0.0)
             return (
@@ -1046,8 +1076,8 @@ class GraphPanel(QFrame):
         self.marker_item.setData([], [])
         self.plot.getAxis("bottom").setTicks(None)
         self.plot.getAxis("left").setTicks(None)
-        self.line_item.setVisible(self._kind in LINE_KINDS)
-        self.scatter_item.setVisible(self._kind == "scatter")
+        self.line_item.setVisible(self._kind in LINE_KINDS or self._kind == "stem")
+        self.scatter_item.setVisible(self._kind in ("scatter", "stem"))
         self.bar_item.setVisible(self._kind in ("bar", "histogram"))
         self.hbar_item.setVisible(self._kind == "hbar")
         self.marker_item.setVisible(self._kind in XY_KINDS)
@@ -1111,7 +1141,12 @@ class GraphPanel(QFrame):
         x_name = self.x_combo.currentText()
         y_name = self.y_combo.currentText()
         series = xy_series(headers, rows, x_name, y_name)
-        prefix = {"area": "Area", "step": "Step"}.get(self._kind, "")
+        prefix = {
+            "area": "Area",
+            "step": "Step",
+            "fstep": "Filled step",
+            "stem": "Stem",
+        }.get(self._kind, "")
         title_text = f"{y_name} vs {x_name}"
         if prefix:
             title_text = f"{prefix}: {title_text}"
@@ -1120,6 +1155,9 @@ class GraphPanel(QFrame):
         self.plot.setLabel("bottom", xlabel)
         self.plot.setLabel("left", ylabel)
         self.plot.showGrid(x=self._grid, y=self._grid, alpha=0.25)
+        if self._kind == "stem":
+            self._set_stem_points(series.x_values, series.y_values)
+            return series.message
         full_x = None
         full_y = None
         if self._play_style == "marker":
@@ -1130,10 +1168,17 @@ class GraphPanel(QFrame):
         self._set_xy_points(series.x_values, series.y_values, full_x, full_y)
         return series.message
 
-    def _set_xy_points(self, x_values, y_values, full_x=None, full_y=None):
-        """Update the existing line, scatter, and marker. Do not create new items."""
-        step = "right" if self._kind == "step" else None
-        fill = 0 if self._kind == "area" else None
+    def _set_xy_points(self, x_values, y_values, full_x=None, full_y=None, stairs_ready=False):
+        """Update the existing line, scatter, and marker. Do not create new items.
+
+        ``stairs_ready`` means the coordinates are already the stair corners,
+        so step mode must not add a second stair on top of them.
+        """
+        if stairs_ready or self._kind not in STEP_KINDS:
+            step = None
+        else:
+            step = "right"
+        fill = 0 if self._kind in ("area", "fstep") else None
         revealed = self._revealed_qcolor()
         pen = pg.mkPen(revealed, width=2)
         brush = None
@@ -1187,35 +1232,73 @@ class GraphPanel(QFrame):
         else:
             self.marker_item.setData([], [])
 
+    def _set_stem_points(self, x_values, y_values):
+        """Vertical lines from zero to each point, plus the dots. Same items."""
+        stem_x = []
+        stem_y = []
+        for x_value, y_value in zip(x_values, y_values):
+            stem_x.extend([x_value, x_value, float("nan")])
+            stem_y.extend([0.0, y_value, float("nan")])
+        color = self._series_color()
+        self.full_line_item.setData([], [])
+        self.full_line_item.setVisible(False)
+        self.line_item.setVisible(True)
+        self.line_item.setData(
+            stem_x,
+            stem_y,
+            pen=pg.mkPen(color, width=2),
+            stepMode=None,
+            fillLevel=None,
+        )
+        self.scatter_item.setVisible(True)
+        self.scatter_item.setData(list(x_values), list(y_values), brush=pg.mkBrush(color))
+        self.marker_item.setSize(self._marker_size)
+        self.marker_item.setBrush(pg.mkBrush(self._marker_qcolor()))
+        if x_values:
+            self.marker_item.setData([x_values[-1]], [y_values[-1]])
+        else:
+            self.marker_item.setData([], [])
+
+    def _expand_stairs(self, xs, ys):
+        """Horizontal to the next x, then vertical to the next y."""
+        if len(xs) <= 1:
+            return list(xs), list(ys)
+        out_x = [xs[0]]
+        out_y = [ys[0]]
+        for x1, y1 in zip(xs[1:], ys[1:]):
+            out_x.append(x1)
+            out_y.append(out_y[-1])
+            out_x.append(x1)
+            out_y.append(y1)
+        return out_x, out_y
+
     def _draw_xy_moving(self, headers, rows, whole, frac):
-        """Draw a continuous line or scatter, gliding toward the next valid point.
+        """Draw only as far as the dot. Points ahead of the dot stay hidden.
 
         ``whole`` is how many rows are fully included. ``frac`` is the
-        fraction of the way from that row to the next numeric point, so
-        the marker moves between samples instead of jumping.
+        fraction of the way toward the next numeric point. A line or area
+        glides along the segment. A step walks horizontally, then
+        vertically. Scatter shows the points reached so far.
         """
         x_name = self.x_combo.currentText()
         y_name = self.y_combo.currentText()
         series = xy_series(headers, rows[:whole], x_name, y_name)
         xs = list(series.x_values)
         ys = list(series.y_values)
+        nxt_x = None
+        nxt_y = None
         if frac > 0 and whole < len(rows):
             nxt = xy_series(headers, [rows[whole]], x_name, y_name)
             if nxt.x_values:
-                if xs:
-                    xs.append(xs[-1] + (nxt.x_values[0] - xs[-1]) * frac)
-                    ys.append(ys[-1] + (nxt.y_values[0] - ys[-1]) * frac)
-                else:
-                    xs.extend(nxt.x_values)
-                    ys.extend(nxt.y_values)
-        full_x = None
-        full_y = None
-        if self._play_style == "marker":
-            full = xy_series(headers, rows, x_name, y_name)
-            full_x = full.x_values
-            full_y = full.y_values
+                nxt_x = nxt.x_values[0]
+                nxt_y = nxt.y_values[0]
         if whole != self._painted_whole:
-            prefix = {"area": "Area", "step": "Step"}.get(self._kind, "")
+            prefix = {
+                "area": "Area",
+                "step": "Step",
+                "fstep": "Filled step",
+                "stem": "Stem",
+            }.get(self._kind, "")
             title_text = f"{y_name} vs {x_name}"
             if prefix:
                 title_text = f"{prefix}: {title_text}"
@@ -1231,7 +1314,44 @@ class GraphPanel(QFrame):
                 message = (message + extra).strip()
             self.note_label.setText(message or "Showing every row in original order.")
             self._painted_whole = whole
-        self._set_xy_points(xs, ys, full_x, full_y)
+        if self._kind == "stem":
+            if nxt_x is not None:
+                xs.append(nxt_x)
+                ys.append(nxt_y * frac)
+            self._set_stem_points(xs, ys)
+            return
+        if self._kind == "scatter":
+            self._set_xy_points(xs, ys)
+            if nxt_x is not None and xs:
+                dot_x = xs[-1] + (nxt_x - xs[-1]) * frac
+                dot_y = ys[-1] + (nxt_y - ys[-1]) * frac
+                self.marker_item.setData([dot_x], [dot_y])
+            elif nxt_x is not None:
+                self.marker_item.setData([nxt_x], [nxt_y])
+            return
+        if self._kind in STEP_KINDS:
+            extra_x = []
+            extra_y = []
+            if nxt_x is not None and xs:
+                _dot_x, _dot_y, extra_x, extra_y = step_dot(
+                    xs[-1], ys[-1], nxt_x, nxt_y, frac
+                )
+            elif nxt_x is not None:
+                xs.append(nxt_x)
+                ys.append(nxt_y)
+            line_x, line_y = self._expand_stairs(xs, ys)
+            line_x.extend(extra_x)
+            line_y.extend(extra_y)
+            self._set_xy_points(line_x, line_y, stairs_ready=True)
+            return
+        if nxt_x is not None:
+            if xs:
+                xs.append(xs[-1] + (nxt_x - xs[-1]) * frac)
+                ys.append(ys[-1] + (nxt_y - ys[-1]) * frac)
+            else:
+                xs.append(nxt_x)
+                ys.append(nxt_y)
+        self._set_xy_points(xs, ys)
 
     def _draw_histogram(self, headers, rows):
         name = self.hist_combo.currentText()
@@ -1384,14 +1504,14 @@ class GraphPanel(QFrame):
         """Move the drawing forward one small step, then return.
 
         The timer calls this. It must not sleep, and it must not build
-        new plot items. Line and scatter glide between points. Bar,
-        histogram, and pie update when another whole row is included.
+        new plot items. The pen moves forward only. At the last row this
+        stops on the finished drawing. It does not walk back to the start.
         """
         if self._dataset is None:
             self._stop_timer()
             return
         count = len(self._dataset.rows)
-        speed = float(self.speed_combo.currentData() or 1.0)
+        speed = float(self.speed_combo.currentData() or 0.5)
         step = PLAYBACK_ROWS_PER_SECOND * speed * (self._interval_ms() / 1000.0)
         self._reveal += step
         if self._reveal >= count:
@@ -1463,108 +1583,19 @@ class GraphPanel(QFrame):
         self.pause_button.setEnabled(False)
 
     def paint_loop_frame(self, phase):
-        """Move this graph for one shared playhead. Do not rebuild items.
+        """Draw this graph at the shared playhead. Do not rebuild items.
 
-        ``phase`` is the elapsed row count from the View all timer.
-        This graph wraps on its own row count. The axis range is left
+        ``wrap_playhead`` jumps to the start after the last row, so the
+        stroke clears and is drawn forward again. The axis range stays
         where ``fit_data`` put it. This does not start ``self._timer``.
         """
         self.halt_playback()
         dataset = self._dataset
         if dataset is None or not dataset.rows:
             return
-        count = len(dataset.rows)
-        reveal = float(phase) % count
-        self._reveal = reveal
-        if self._kind == "pie":
-            self.donut.set_rotation(reveal / count)
-            return
-        if self._kind in XY_KINDS:
-            self._paint_circular_xy(reveal, count)
-            return
-        self._paint_circular_category(reveal, count)
-
-    def _paint_circular_xy(self, reveal, count):
-        """Keep the full series on the existing items and glide the marker."""
-        headers = self._dataset.headers
-        rows = self._dataset.rows
-        series = xy_series(
-            headers,
-            rows,
-            self.x_combo.currentText(),
-            self.y_combo.currentText(),
-        )
-        xs = list(series.x_values)
-        ys = list(series.y_values)
-        x, y = _loop_point(xs, ys, reveal, count)
-        step = "right" if self._kind == "step" else None
-        fill = 0 if self._kind == "area" else None
-        color = self._series_color()
-        pen = pg.mkPen(color, width=2)
-        brush = None
-        if fill is not None:
-            fill_color = QColor(color)
-            fill_color.setAlpha(90)
-            brush = pg.mkBrush(fill_color)
-        self.full_line_item.setData([], [])
-        self.full_line_item.setVisible(False)
-        if self._kind in LINE_KINDS and xs:
-            self.line_item.setVisible(True)
-            self.line_item.setData(
-                xs,
-                ys,
-                pen=pen,
-                stepMode=step,
-                fillLevel=fill,
-                brush=brush,
-            )
-        else:
-            self.line_item.setData([], [])
-            self.line_item.setVisible(False)
-        if self._kind == "scatter" and xs:
-            self.scatter_item.setVisible(True)
-            self.scatter_item.setData(xs, ys, brush=pg.mkBrush(color))
-        else:
-            self.scatter_item.setData([], [])
-            self.scatter_item.setVisible(False)
-        self._place_loop_marker(x, y)
-
-    def _paint_circular_category(self, reveal, count):
-        """Draw the full bars, then glide a marker around them."""
-        headers = self._dataset.headers
-        rows = self._dataset.rows
-        if self._kind == "histogram":
-            self._draw_histogram(headers, rows)
-            values, _blank, _missing, _text = numeric_series(
-                headers, rows, self.hist_combo.currentText()
-            )
-            centers, counts, _width = histogram_bins(values, self.bin_spin.value())
-            xs, ys = list(centers), list(counts)
-        else:
-            self._draw_bars(headers, rows, horizontal=self._kind == "hbar")
-            _labels, numbers, _message = category_aggregate(
-                headers,
-                rows,
-                self.bar_category.currentText(),
-                self.bar_value.currentText(),
-                self.bar_how.currentText() or "mean",
-            )
-            if self._kind == "hbar":
-                xs, ys = list(numbers), list(range(len(numbers)))
-            else:
-                xs, ys = list(range(len(numbers))), list(numbers)
-        x, y = _loop_point(xs, ys, reveal, count)
-        self._place_loop_marker(x, y)
-
-    def _place_loop_marker(self, x, y):
-        self.marker_item.setVisible(True)
-        self.marker_item.setSize(self._marker_size)
-        self.marker_item.setBrush(pg.mkBrush(self._marker_qcolor()))
-        self.marker_item.setPen(pg.mkPen(self._series_color(), width=1))
-        if x is None:
-            self.marker_item.setData([], [])
-        else:
-            self.marker_item.setData([x], [y])
+        self._reveal = wrap_playhead(phase, len(dataset.rows))
+        self._painted_whole = -1 if self._reveal < 0.001 else self._painted_whole
+        self._paint_smooth()
 
 
 class GraphBoard(QWidget):
@@ -1793,9 +1824,7 @@ class ViewAllPage(QWidget):
         self.pause_button.setEnabled(False)
         self.speed_combo = QComboBox()
         self.speed_combo.setObjectName("viewAllSpeed")
-        for label, value in (("0.5x", 0.5), ("1x", 1.0), ("2x", 2.0), ("4x", 4.0)):
-            self.speed_combo.addItem(label, value)
-        self.speed_combo.setCurrentText("1x")
+        fill_speed_combo(self.speed_combo)
         bar_layout = QHBoxLayout(self.bar)
         bar_layout.setContentsMargins(0, 0, 0, 0)
         bar_layout.setSpacing(12)
@@ -1880,13 +1909,13 @@ class ViewAllPage(QWidget):
         self.pause_button.setEnabled(False)
 
     def advance_loop(self):
-        """Move every graph one step, then return.
+        """Move every graph one step forward, then return.
 
         The timer calls this. It does not sleep, and it does not build
-        new plot items. When a graph passes its last row, its playhead
-        wraps to the start.
+        new plot items. ``wrap_playhead`` sends a finished graph back to
+        its first point. The phase itself is not decreased.
         """
-        speed = float(self.speed_combo.currentData() or 1.0)
+        speed = float(self.speed_combo.currentData() or 0.5)
         step = PLAYBACK_ROWS_PER_SECOND * speed * (PLAYBACK_FRAME_MS / 1000.0)
         self._phase += step
         for panel in self._board.panels():
