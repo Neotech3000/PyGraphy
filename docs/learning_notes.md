@@ -16,7 +16,7 @@ You do not call `_on_serial_row` from the serial port yourself. The panel emits 
 
 Buttons use the same idea. Each mode button's `clicked` signal calls `_set_mode` with `"graph"`, `"manual"`, or `"serial"`. That only changes which page is visible. Each home-page button's `clicked` signal calls `_choose_kind` with one of the names in `GRAPH_KINDS`: `"line"`, `"scatter"`, `"area"`, `"step"`, `"bar"`, `"hbar"`, `"histogram"`, or `"pie"`.
 
-A typed cell is another wire. Manual entry shows the source model, and `dataChanged` is connected to `_on_manual_edited`, which tells that graph to redraw.
+A typed cell is another wire. Manual entry shows the source model, and `dataChanged` is connected to `_on_manual_edited`, which tells that graph to redraw. The Tables tabs are a `QTabBar`, and `currentChanged` is connected to `_manual_switcher_changed`. That slot picks which table the grid shows, so the graph that redraws is the one whose table is on screen.
 
 ## Layouts
 
@@ -45,7 +45,7 @@ Each graph has its own timer. Playing on one panel does not move another panel. 
 
 `DataSet.rows` is the original list. CSV rows are stored there from top to bottom. Serial rows are appended at the end. Typed rows are appended there too.
 
-The table's model is `RecordTableModel`. Its `data` method indexes that same list. The graph view does not use the model directly. It uses `RowOrderProxy`, and `setSortingEnabled(True)` lets a column header sort the proxy. Manual entry binds the model itself, so that grid stays in original order and accepts edits.
+The table's model is `RecordTableModel`. Its `data` method indexes that same list. The graph view does not use the model directly. It uses `RowOrderProxy`, and `setSortingEnabled(True)` lets a column header sort the proxy. Manual entry binds the model itself, so that grid stays in original order and accepts edits. With more than one table open, the model in that grid is the one of the table on screen, not always the selected graph's.
 
 `RowOrderProxy.lessThan` decides which of two cells should appear first. It does not assign back into `dataset.rows`. The plot and the playback slider both read `dataset.rows`. After a sort, the vertical header can still show the original row number because `headerData` numbers the source row.
 

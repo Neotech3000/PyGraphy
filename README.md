@@ -13,12 +13,14 @@ It is aimed at someone who wants to plot a table, and at someone who wants to re
 Three mode buttons sit at the top. They change the page. They do not delete rows.
 
 - **Graph** shows the comparison board, or the All graph types page.
-- **Manual entry** edits the selected graph's cells.
+- **Manual entry** edits the cells of one table. The Tables tabs switch which table the grid shows.
 - **Microcontroller** holds Live serial capture, plus Copy graph and Copy table.
 
 Every launch opens with no graphs and no rows. The status bar says "No data set" and "0 rows". The sample file stays closed until you choose File → Load sample CSV. **Clear table** sits on the data table, above the grid. It clears the selected graph in memory and does not change the file on disk.
 
-**Add graph** puts another graph beside the others. Each one keeps its own rows, its own type, its own columns, and its own record-playback timer. One series is all a single graph draws. A second graph is how you show a second series.
+**Add graph** puts another graph beside the others. Each one keeps its own rows, its own type, its own columns, and its own record-playback timer. One series is all a single graph draws. A second graph is how you show a second series. **Fit data** on a graph zooms it to the rows that graph holds.
+
+**Add table** on Manual entry starts a blank table without leaving the page. It does not copy another table's rows. The **Tables** tabs switch which table the grid shows, and each table keeps its own cells.
 
 The graph types are Line, Scatter, Area, Step, Bar, Horizontal bar, Histogram, and Pie or donut.
 
@@ -114,21 +116,23 @@ The sample CSV does not open by itself.
 
    ![Donut of the sample locations. Lab 3, roof 4, field 5.](docs/images/donut.png)
 
-7. **Read the stats.** The stats line is for one numeric column of the whole data set, not only the rows playback is showing. For `temperature_c` the count is 11, because `abc` is missing. Sample standard deviation divides by n−1. With fewer than two numbers the line shows an em dash.
+7. **Fit the graph to its own rows.** Press Fit data on the graph. Each graph zooms to the rows it holds, so two graphs with different amounts of data both fill their panel. Playback keeps that full-data range instead of zooming on every frame.
 
-8. **Play the recording.** Under the graph, press Reset, then Play, then Pause. The marker glides along the original rows. Change the speed (0.5x, 1x, 2x, 4x). "Reveal the line" draws the series as it advances. "Marker on the full line" keeps the whole series on screen and moves the marker. This timer is not the serial port. Each graph has its own timer. Loading a new table, or switching away from that graph's rows, stops it.
+8. **Read the stats.** The stats line is for one numeric column of the whole data set, not only the rows playback is showing. For `temperature_c` the count is 11, because `abc` is missing. Sample standard deviation divides by n−1. With fewer than two numbers the line shows an em dash.
 
-9. **Add a second graph.** Press Add graph. The new graph starts empty and is marked Selected. File → Load sample CSV, Open CSV, Import table, and Paste table go into the selected graph. If that graph already has rows, PyGraphy asks before replacing them. Clear table asks, then forgets that graph's rows and columns in memory. The other graphs stay as they are. The file on disk is not modified.
+9. **Play the recording.** Under the graph, press Reset, then Play, then Pause. The marker glides along the original rows. Change the speed (0.5x, 1x, 2x, 4x). "Reveal the line" draws the series as it advances. "Marker on the full line" keeps the whole series on screen and moves the marker. This timer is not the serial port. Each graph has its own timer. Loading a new table, or switching away from that graph's rows, stops it.
 
-10. **Type a table.** Press Manual entry. Type a column name and press Add column. That starts a tab if the selected graph does not have one. Press Add row, then type in the cells. The characters stay text until a graph parses them. These are the same rows the graph uses. Closing PyGraphy does not write them. File → Export records as CSV saves them when you ask.
+10. **Add a second graph.** Press Add graph. The new graph starts empty and is marked Selected. File → Load sample CSV, Open CSV, Import table, and Paste table go into the selected graph. If that graph already has rows, PyGraphy asks before replacing them. Clear table asks, then forgets that graph's rows and columns in memory. The other graphs stay as they are. The file on disk is not modified.
 
-11. **Import or paste.** File → Open CSV reads a `.csv` file. File → Import table also reads `.xlsx` (Excel, or a Google Sheets file saved as xlsx) and `.ods` (LibreOffice Calc). There is no Google login. The workbook is opened for reading and closed. File → Paste table reads tab-separated cells from the clipboard. The first row is the header.
+11. **Type a table.** Press Manual entry. Press Add table to start a blank table. It does not copy another table's rows. Type a column name and press Add column, then press Add row, then type in the cells. The Tables tabs switch which table the grid shows, and each table keeps its own cells. The characters stay text until a graph parses them. These are the same rows that table's graph uses. Closing PyGraphy does not write them. File → Export records as CSV saves them when you ask.
 
-12. **Serial, without a board if you do not have one.** Press Microcontroller. The panel is labeled Live serial capture. Refresh ports, leave the baud at 115200 unless your board uses another rate, then Connect. The device should print a header line, then comma-separated rows, for example `millis,temperature` and then `1000,21.5`. Rows are appended to the selected data set. Copy graph puts a PNG of the current graph on the clipboard, using the rows captured so far. Copy table puts those rows on the clipboard as tab-separated text, in original order. Neither button is live acquisition.
+12. **Import or paste.** File → Open CSV reads a `.csv` file. File → Import table also reads `.xlsx` (Excel, or a Google Sheets file saved as xlsx) and `.ods` (LibreOffice Calc). There is no Google login. The workbook is opened for reading and closed. File → Paste table reads tab-separated cells from the clipboard. The first row is the header.
 
-13. **Export.** File → Export graph as PNG saves the selected graph. File → Export records as CSV writes the selected rows in original order. Export refuses the file you loaded. Any other existing file asks "Replace it?" first.
+13. **Serial, without a board if you do not have one.** Press Microcontroller. The panel is labeled Live serial capture. Refresh ports, leave the baud at 115200 unless your board uses another rate, then Connect. The device should print a header line, then comma-separated rows, for example `millis,temperature` and then `1000,21.5`. Rows are appended to the selected data set. Copy graph puts a PNG of the current graph on the clipboard, using the rows captured so far. Copy table puts those rows on the clipboard as tab-separated text, in original order. Neither button is live acquisition.
 
-14. **About.** Help → About PyGraphy restates the same limits: one series per graph, no session file, donut drawn with `QPainter`.
+14. **Export.** File → Export graph as PNG saves the selected graph. File → Export records as CSV writes the selected rows in original order. Export refuses the file you loaded. Any other existing file asks "Replace it?" first.
+
+15. **About.** Help → About PyGraphy restates the same limits: one series per graph, no session file, donut drawn with `QPainter`.
 
 ## Sample file
 

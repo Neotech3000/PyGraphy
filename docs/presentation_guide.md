@@ -27,7 +27,7 @@ Have these four spots ready in the editor:
 
 **3:00 — Stats.** Leave the stats column on `temperature_c`. Read count, missing, min, max, mean, median, and sample stdev. The label says "divide by n-1". That is `sample_standard_deviation`. The count is 11 because `abc` is not a number. Stats use the whole column, even if playback is only showing a prefix.
 
-**3:30 — Record playback.** Press Reset, then Play, then Pause. The marker glides along the original rows and the line stays on screen. Change speed. This timer is not the serial port. If you have time for one sentence: Add graph makes a second panel with its own timer, and it does not copy this panel's rows.
+**3:30 — Record playback.** Press Reset, then Play, then Pause. The marker glides along the original rows and the line stays on screen. Change speed. This timer is not the serial port. If you have time for one sentence: Add graph makes a second panel with its own timer, and it does not copy this panel's rows. Each panel zooms to its own rows, so Fit data fills a graph that holds less data than its neighbour.
 
 **4:10 — Live serial, without connecting.** Press Microcontroller. Show the port list, baud 115200, Connect, and Disconnect. Read the example on the panel: a header line, then comma-separated rows (`millis,temperature`, then `1000,21.5`). If a port is listed, say you are not opening it in the demo.
 
@@ -52,6 +52,8 @@ Have these four spots ready in the editor:
 - The sample path uses `Path(__file__)`, so Load sample CSV works even if you started Python from another directory.
 - Text and numbers are stored separately. The table shows what the file said. Plot code calls `parse_cell` on a copy of that text.
 - One series keeps the controls small enough to read: one X, one Y, one category, one value. Add graph is a second panel, not a second series on the same axes.
+- Each panel fits its own rows. `fit_data` sets the axis range from that panel's data, and auto-range is off, so one graph cannot move another.
+- Manual entry can hold several tables. The Tables tabs pick which one the grid shows, so a typed cell lands in the table you are looking at.
 - The three mode buttons change the page. They do not call `replace_table` and they do not clear `dataset.rows`.
 
 ## Likely questions
@@ -70,7 +72,7 @@ Have these four spots ready in the editor:
 
 **Can I plot two columns at once?** Not on one graph. One series is all `GraphPanel` draws. Press Add graph and choose another Y on the new panel. Each panel keeps its own rows.
 
-**Where do I type a value by hand?** Manual entry. Add column, then Add row. Those cells are the selected graph's `DataSet`. Closing the app does not save them. File → Export records as CSV does.
+**Where do I type a value by hand?** Manual entry. Press Add table to start a blank table, then Add column, then Add row. The Tables tabs switch which table the grid shows, and each table keeps its own cells. Those cells are that table's `DataSet`. Closing the app does not save them. File → Export records as CSV does.
 
 **Will export destroy my CSV?** Export of records refuses the path you loaded. Any other existing file asks "Replace it?" before writing. `load_csv` never opens the source for writing.
 

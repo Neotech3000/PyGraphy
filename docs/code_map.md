@@ -23,7 +23,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 | `main.py` | Entry point, menus, the three mode pages, data-set tabs, the read-only table, and the signal connections that join the other modules. |
 | `appearance.py` | Desktop light/dark palette, the Omarchy theme file, and `load_style` for `style.qss`. |
 | `dataset.py` | In-memory rows, CSV / xlsx / ods / paste reading, numeric parsing, aggregations, and statistics. Row order here is the order used by plots and playback. |
-| `graph_view.py` | `GRAPH_KINDS`, one graph at a time (`GraphPanel`), the board that holds several graphs (`GraphBoard`), and record playback. |
+| `graph_view.py` | `GRAPH_KINDS`, one `GraphPanel` per graph, the board that holds several graphs (`GraphBoard`), and record playback. |
 | `serial_panel.py` | Live USB serial capture with `QSerialPort`. This is not playback. |
 | `sample_data.csv` | Bundled rows so every graph type works with no board attached. |
 | `style.qss` | Fonts and spacing. Colors come from `palette()`, not from hex codes in this file. |
@@ -36,6 +36,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 
 - `main` creates the application, asks `appearance.py` to paint it, and shows `PyGraphyWindow`.
 - `PyGraphyWindow` is the `QMainWindow`. Three modes (`_set_mode`) show Graph, Manual entry, or Microcontroller. `_choose_kind` sets the type on the selected graph. `_load_sample`, `_load_path`, `_import_into_panel`, and `_paste_table` fill that graph. `_on_serial_header` and `_on_serial_row` append live rows to it. `_connect_signals` is the list of signal-to-slot wires.
+- `_add_manual_table` starts a blank table on the selected graph and stays on Manual entry. `_refresh_manual_switcher` rebuilds the Tables tabs from the open tables. `_manual_switcher_changed` switches which table the grid shows. `_screen_manual_tab` finds the table whose cells are in the grid right now, so a cell edit lands in that table and not the selected graph's.
 - The window opens on the workspace with no rows and no graphs. `HomePage` is the "All graph types" screen. It offers one button per entry in `GRAPH_KINDS`.
 - `DataSetTab` is one closable tab: a `DataSet` plus a table. The selected graph owns that tab.
 - `RecordTableModel` reads `dataset.rows` and never reorders that list. Manual entry edits this model. The graph table turns editing off. `replaced` reloads the whole table. `added_row` inserts one new row.
@@ -61,6 +62,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 - `GraphBoard` lays `GraphPanel` widgets in a grid, two across when the board is wide. `add_panel` creates an empty graph with its own `QTimer`. Removing one panel does not touch the others.
 - `GraphPanel` holds the column controls, the plot, the stats line, and record playback for one graph.
 - `set_kind` chooses the view. `show_dataset` points the panel at one tab and stops playback. `note_rows_changed` does the same after a row arrives or a cell is typed.
+- `fit_data` sets that panel's axis range from its own rows. The Fit data button calls it. Auto-range stays off, so a later frame or another panel cannot move this view.
 - `_redraw` asks `dataset.py` for numbers from `dataset.rows[:slider]`. It updates the same plot items with `setData` or `setOpts`. It does not create a new line on every tick. `_redraw_stats` uses the full column, not the slider prefix.
 - `DonutChart.paintEvent` draws the pie and the hole. `_draw_pie` calls `pie_values` and then `set_chart`.
 - `_play`, `_pause`, `_reset`, and `_advance` are record playback. `_interval_ms` is the timer delay. `_draw_xy_moving` glides the marker between points. "Reveal the line" and "Marker on the full line" are the two playback looks.
@@ -112,7 +114,7 @@ A serial header that does not match the selected tab sets `_serial_hold` in the 
 
 Blank, missing (`na`, `n/a`, `null`, `none`, `nan`), and other non-numeric text stay in the table as typed. Plot helpers count them and build a sentence with `exclusion_message`. For a line or scatter plot, one bad side of a pair drops both X and Y.
 
-Manual entry and the graph table share one `RecordTableModel`. The graph view puts a sort proxy in front and turns editing off. Manual entry uses the model directly, so a typed cell is a real row and the manual grid stays in original order.
+Manual entry and the graph table share one `RecordTableModel`. The graph view puts a sort proxy in front and turns editing off. Manual entry uses the model directly, so a typed cell is a real row and the manual grid stays in original order. The Tables tabs pick which table the grid shows, so the model in the grid is the one of the table on screen, not always the selected graph's.
 
 ## Where to change things
 
@@ -131,3 +133,7 @@ Manual entry and the graph table share one `RecordTableModel`. The graph view pu
 **Colors.** Do not type a hex color into `style.qss`. Palette roles are filled in `appearance.py` (`palette_from_omarchy` on Omarchy, the desktop palette otherwise). Pie slices come from `slice_color` in `graph_view.py`, rotated from the highlight color. The playback marker and the revealed line can be set per graph from `LOOK_COLORS`. The "Theme" choice uses the desktop accent and highlight.
 
 **A column, by hand.** Manual entry's Add column button calls `_add_manual_column`, which calls `DataSet.add_column`. Add row calls `DataSet.add_blank_row`. A cell edit calls `RecordTableModel.setData`, which calls `DataSet.set_cell`.
+
+**A table, by hand.** Manual entry's Add table button calls `_add_manual_table`. That makes a new `DataSet`, adds one blank column and one blank row, and gives it a panel on the board. It does not copy another table's rows. The Tables tabs are a `QTabBar` named `manualTableTabs`, rebuilt by `_refresh_manual_switcher` from the open tables. `_manual_switcher_changed` selects the matching graph so the grid and the graph show the same table. `style.qss` styles the tabs under `QTabBar#manualTableTabs`.
+
+**Fitting a graph to its rows.** The Fit data button on each panel calls `GraphPanel.fit_data` in `graph_view.py`. It reads that panel's own rows and sets the axis range, with `FIT_PADDING` space around the points. `_finite_span` keeps a flat series from collapsing the axis. `NEUTRAL_RANGE` is the fallback when the panel has no numbers.
