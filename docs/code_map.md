@@ -82,7 +82,9 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 - `apply_active_palette` picks one path. `apply_omarchy_palette` reads `colors.toml` from `omarchy_theme_dir()` when that file exists. The folder comes from `XDG_STATE_HOME` or the home directory's `.local/state`. It does not name one computer.
 - On other Linux desktops, `apply_system_color_scheme` and `sync_palette_to_color_scheme` follow the freedesktop light/dark setting. The platform style stays in place.
 - On Windows and macOS, `apply_builtin_palette` switches to Fusion and installs `BUILTIN_DARK` (or `BUILTIN_LIGHT` when the OS scheme is light). Fusion is what lets buttons, fields, tables, and tabs use those roles. Linux does not take this path.
-- `load_style` reads `style.qss` through `bundled_path`.
+- `apply_active_palette` remembers the path it chose on the app. A theme change calls it again with no platform and reuses that choice, so a window given the built-in palette does not fall back to the desktop palette.
+- `_use_fusion_style` is called on every built-in palette install, but it only sets the style once. A stylesheet wraps the style in `QStyleSheetStyle` and hides its name, so the guard remembers what it installed instead of reading the name every time.
+- `load_style` reads `style.qss` through `bundled_path`. The same file is used on every platform.
 - `_DesktopSchemeWatcher` and `_OmarchyThemeWatcher` call `_restyle_after_scheme_change` when the theme changes while the window is open. `main` keeps both objects on the window so they are not thrown away.
 
 ## Data flow

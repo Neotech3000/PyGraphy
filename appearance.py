@@ -38,6 +38,11 @@ _desktop_palette = None
 _desktop_scheme = None
 # True only after this process calls setColorScheme. Unset is then safe.
 _color_scheme_overridden = False
+# Marks an application whose style this process already set to Fusion.
+_FUSION_PROPERTY = "pygraphyFusionStyle"
+# Remembers which palette path an application chose: omarchy, builtin,
+# or system.
+_PALETTE_KIND_PROPERTY = "pygraphyPaletteKind"
 
 try:
     from PyQt6.QtDBus import QDBusVariant
@@ -314,11 +319,25 @@ def _use_fusion_style(app):
     Windows and macOS native styles draw those controls from the OS
     theme and skip the palette. Linux must not call this. Its desktop
     style is what paints the Omarchy colors.
+
+    A stylesheet wraps the style in QStyleSheetStyle, and that wrapper
+    hides the name of the style underneath it. Once style.qss is loaded
+    the name reads as an empty string, so the name alone cannot tell
+    Fusion from another style. The name is trusted when it is readable.
+    While it is hidden, this remembers that it already installed
+    Fusion, so the style is not built again on every theme change.
     """
     style = app.style()
-    if style is not None and style.objectName().lower() == "fusion":
+    name = style.objectName().lower() if style is not None else ""
+    if name == "fusion":
+        app.setProperty(_FUSION_PROPERTY, True)
+        return
+    if name == "" and app.property(_FUSION_PROPERTY):
+        # The name is hidden by the stylesheet wrapper. This process
+        # installed Fusion already, so the hidden style is Fusion.
         return
     app.setStyle("Fusion")
+    app.setProperty(_FUSION_PROPERTY, True)
 
 
 def apply_builtin_palette(app):
@@ -343,15 +362,31 @@ def apply_active_palette(app, platform=None):
     follows the freedesktop light/dark setting and the desktop palette.
     Windows and macOS use the built-in palette and still switch with
     the OS light or dark setting.
+
+    The choice is remembered on the app. A theme change calls this
+    again without a platform, and it reuses the remembered choice
+    instead of asking the platform a second time. Without that, a
+    window that was given the built-in palette would go back to the
+    desktop palette on the next theme change. Pass ``platform`` to
+    change the choice.
     """
     if apply_omarchy_palette(app):
+        app.setProperty(_PALETTE_KIND_PROPERTY, "omarchy")
         return "omarchy"
-    if prefers_builtin_palette(platform):
+    if platform is not None:
+        kind = "builtin" if prefers_builtin_palette(platform) else "system"
+        app.setProperty(_PALETTE_KIND_PROPERTY, kind)
+    else:
+        kind = app.property(_PALETTE_KIND_PROPERTY)
+        if kind not in ("builtin", "system"):
+            kind = "builtin" if prefers_builtin_palette() else "system"
+            app.setProperty(_PALETTE_KIND_PROPERTY, kind)
+    if kind == "builtin":
         apply_builtin_palette(app)
-        return "builtin"
-    apply_system_color_scheme(app)
-    sync_palette_to_color_scheme(app)
-    return "system"
+    else:
+        apply_system_color_scheme(app)
+        sync_palette_to_color_scheme(app)
+    return kind
 
 
 def apply_omarchy_palette(app):
@@ -599,16 +634,13 @@ def _restyle_after_scheme_change(app, window):
     def apply_when_ready():
         global _restyle_queued
         _restyle_queued = False
-        kind = apply_active_palette(app)
+        # apply_active_palette installs the palette, and load_style
+        # reads the palette roles back out of it. Installing the
+        # palette a second time after that only repeats work: the
+        # stylesheet does not change the palette, and _install_palette
+        # already repairs a palette the style replaced.
+        apply_active_palette(app)
         load_style(app)
-        # Qt can replace the palette while the stylesheet is applied.
-        # Put the chosen colors back. Omarchy already installed its
-        # palette inside apply_active_palette, and a second pass would
-        # re-read colors.toml for no gain.
-        if kind == "system":
-            sync_palette_to_color_scheme(app)
-        elif kind == "builtin":
-            apply_builtin_palette(app)
         board = getattr(window, "graph_board", None)
         if board is not None:
             board.apply_plot_palette()

@@ -11,6 +11,11 @@
    Do not type a hex color here. A hex color would stay the same
    when the theme changes.
 
+   This file is the same on every platform. Windows and macOS draw
+   their controls with Fusion, which paints them from these same
+   palette roles, so they need no extra rules here. Adding rules for
+   those widgets would also change how the Linux window looks.
+
    To change a font, edit font-size on QLabel#homeTitle.
    To change spacing, edit padding on the mode buttons or min-height
    on the graph choices. Save the file and start the app again.
@@ -55,42 +60,13 @@ QGroupBox {
     margin-top: 10px;
     padding: 12px;
     color: palette(window-text);
-    background-color: palette(button);
-    border: 1px solid palette(mid);
-    border-radius: 6px;
 }
 
 QGroupBox::title {
     color: palette(window-text);
-    background-color: palette(button);
     subcontrol-origin: margin;
     left: 8px;
     padding: 0 4px;
-}
-
-QPushButton {
-    background-color: palette(button);
-    color: palette(button-text);
-    border: 1px solid palette(mid);
-    border-radius: 4px;
-}
-
-QPushButton:hover {
-    background-color: palette(light);
-}
-
-QPushButton:pressed {
-    background-color: palette(mid);
-}
-
-QPushButton:checked {
-    background-color: palette(highlight);
-    color: palette(highlighted-text);
-    border-color: palette(highlight);
-}
-
-QPushButton:disabled {
-    color: palette(dark);
 }
 
 QPushButton#mode-graph,
@@ -125,54 +101,6 @@ QPushButton[graphChoice="true"] {
     padding: 16px;
 }
 
-QLineEdit,
-QPlainTextEdit {
-    background-color: palette(base);
-    color: palette(text);
-    border: 1px solid palette(mid);
-    border-radius: 4px;
-    padding: 4px 6px;
-    selection-background-color: palette(highlight);
-    selection-color: palette(highlighted-text);
-}
-
-QComboBox,
-QSpinBox {
-    color: palette(text);
-    selection-background-color: palette(highlight);
-    selection-color: palette(highlighted-text);
-}
-
-QComboBox QAbstractItemView {
-    background-color: palette(base);
-    color: palette(text);
-    selection-background-color: palette(highlight);
-    selection-color: palette(highlighted-text);
-}
-
-QTabBar {
-    background: palette(window);
-}
-
-QTabBar::tab {
-    background: palette(button);
-    color: palette(window-text);
-    border: 1px solid palette(mid);
-    padding: 6px 12px;
-    margin-right: 4px;
-}
-
-QTabBar::tab:selected {
-    background: palette(highlight);
-    color: palette(highlighted-text);
-    border-color: palette(highlight);
-}
-
-QTabWidget::pane {
-    background: palette(window);
-    border: 1px solid palette(mid);
-}
-
 QTabBar#manualTableTabs::tab {
     padding: 6px 14px;
     margin-right: 6px;
@@ -185,47 +113,9 @@ QTabBar#manualTableTabs::tab:selected {
     color: palette(highlighted-text);
 }
 
-QTableView {
-    background-color: palette(base);
-    alternate-background-color: palette(alternate-base);
-    color: palette(text);
-    gridline-color: palette(mid);
-    selection-background-color: palette(highlight);
-    selection-color: palette(highlighted-text);
-}
-
-QTableView::item:selected {
-    background-color: palette(highlight);
-    color: palette(highlighted-text);
-}
-
-QHeaderView::section {
-    background-color: palette(button);
-    color: palette(button-text);
-    border: 1px solid palette(mid);
-    padding: 4px;
-}
-
 QLabel#noticeLabel {
     color: palette(window-text);
     padding: 4px 0;
-}
-
-QMenuBar,
-QStatusBar {
-    background-color: palette(window);
-    color: palette(window-text);
-}
-
-QMenu {
-    background-color: palette(button);
-    color: palette(button-text);
-    border: 1px solid palette(mid);
-}
-
-QMenu::item:selected {
-    background-color: palette(highlight);
-    color: palette(highlighted-text);
 }
 
 QFrame#graphPanel {

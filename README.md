@@ -28,7 +28,7 @@ The graph types are Line, Scatter, Area, Step, Bar, Horizontal bar, Histogram, a
 
 Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph. The pie is a donut drawn with `QPainter`, because `PyQt6.QtCharts` is not installed. Box plots and candlesticks are not included. PyQtGraph does not draw those from one line or one bar item.
 
-On Omarchy, the window uses the active theme's background, text, and accent, and it updates when that theme file changes. On other Linux desktops it follows the freedesktop light or dark setting. On Windows and macOS the same light or dark switch is followed, and the default dark colors are the warm brown and periwinkle palette the Linux window shows.
+On Omarchy, the window uses the active theme's background, text, and accent, and it updates when that theme file changes. On other Linux desktops it follows the freedesktop light or dark setting. On Windows and macOS the same light or dark switch is followed, and the default dark colors are a warm brown and periwinkle set that matches the Linux look.
 
 File, Graph, and Help are the menus. The status bar shows the data-set name, the row count, and whether USB serial is connected.
 
@@ -166,7 +166,9 @@ This copy has not been tested by opening a connected board. The panel lists what
 
 Linux keeps the desktop style. Omarchy reads `colors.toml` from the active theme folder (`XDG_STATE_HOME` or `~/.local/state`, then `omarchy/current/theme`) and applies it again when that file changes. Other Linux desktops follow the freedesktop color-scheme setting. The palette saved at startup is restored when the scheme returns to the one the computer used then. The other side comes from the widget style.
 
-Windows and macOS do not inherit that Linux theme, and their native styles ignore most palette roles. PyGraphy uses the Fusion style there so buttons, fields, tables, tabs, and plots paint from the palette. When the system is dark, or has no preference, the palette is the Linux window's warm dark set: near-black brown `#1a1212`, lighter brown panels (`#2a2222` to `#3a3030`), near-white text, and periwinkle `#7b8fc9` for the selected mode button, the selected tab, the highlighted table row, and the plot line, fill, and markers. A light system setting uses a warm light palette with the same accent. Changing the OS appearance while the app is open applies that palette again.
+Windows and macOS do not inherit that Linux theme, and their native styles ignore most palette roles. PyGraphy uses the Fusion style there so buttons, fields, tables, tabs, and plots paint from the palette. When the system is dark, or has no preference, the palette is a warm dark set that matches the Linux look: near-black brown `#1a1212`, lighter brown panels (`#2a2222` to `#3a3030`), near-white text, and periwinkle `#7b8fc9` for the selected mode button, the selected tab, the highlighted table row, and the plot line, fill, and markers. A light system setting uses a warm light palette with the same accent. Changing the OS appearance while the app is open applies that palette again.
+
+`style.qss` is the same file on every platform. Fusion paints those controls from the palette roles on its own, so Windows and macOS need no extra rules there, and the Linux window is not changed by them.
 
 ## Troubleshooting
 
