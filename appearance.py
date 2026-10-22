@@ -1,14 +1,25 @@
 """Desktop theme for the PyGraphy window.
 
 On Omarchy, the window uses the active theme's background, text, and
-accent, and it updates when that theme file changes. On other computers
-it follows the desktop light or dark setting. ``style.qss`` is applied
-after the palette and looks up ``palette()`` roles, so a theme change
-reloads that file.
+accent, and it updates when that theme file changes. On other Linux
+desktops it follows the freedesktop light or dark setting and the
+palette Qt got from the desktop. That path is unchanged.
 
-``main`` calls ``remember_desktop_palette``, then ``apply_omarchy_palette``
-or the freedesktop helpers, then ``load_style``. The watcher objects stay
-alive on the window so a change during the session is picked up.
+Windows and macOS do not inherit the Linux theme. Their native styles
+also ignore most palette roles, so buttons, fields, and tables would
+stay the OS gray. They use Fusion and ``BUILTIN_DARK`` when the system
+is dark or has no preference: a warm near-black window, lighter brown
+panels, near-white text, and a muted periwinkle accent. A light system
+setting uses ``BUILTIN_LIGHT`` with the same accent, so the window
+still follows the OS.
+
+``style.qss`` is applied after the palette and looks up ``palette()``
+roles, so a theme change reloads that file. Do not put a hex color in
+that file.
+
+``main`` calls ``remember_desktop_palette``, then ``apply_active_palette``,
+then ``load_style``. The watcher objects stay alive on the window so a
+change during the session is picked up.
 """
 
 import os
@@ -158,22 +169,16 @@ def _text_on(accent, background, text):
     return QColor(text)
 
 
-def palette_from_omarchy(colors):
-    """Map Omarchy background, text, and accent onto Qt palette roles.
+def _palette_with_colors(background, text, accent, button, alternate, mid, base):
+    """Fill the roles plots, tables, tabs, and buttons read.
 
-    Edit the role lines in this function to change which Omarchy color
-    paints a part of the window. PyQtGraph reads Base, Text, Highlight,
-    and Accent from this palette. style.qss looks up the same roles
-    with palette().
+    ``base`` is the field and table color. Omarchy passes the window
+    background for it. The built-in palette passes a lighter panel
+    color so inputs sit above the window.
     """
-    background = QColor(colors["background"])
-    text = QColor(colors["foreground"])
-    accent = QColor(colors["accent"])
-    button = _mix_colors(background, text, 0.08)
-    alternate = _mix_colors(background, text, 0.14)
-    mid = _mix_colors(background, text, 0.35)
     quiet = _mix_colors(text, background, 0.45)
     on_accent = _text_on(accent, background, text)
+    dark = _mix_colors(background, text, 0.55)
     palette = QPalette()
     groups = (
         QPalette.ColorGroup.Active,
@@ -185,7 +190,7 @@ def palette_from_omarchy(colors):
         ink = quiet if disabled else text
         palette.setColor(group, QPalette.ColorRole.Window, background)
         palette.setColor(group, QPalette.ColorRole.WindowText, ink)
-        palette.setColor(group, QPalette.ColorRole.Base, background)
+        palette.setColor(group, QPalette.ColorRole.Base, base)
         palette.setColor(group, QPalette.ColorRole.AlternateBase, alternate)
         palette.setColor(group, QPalette.ColorRole.Text, ink)
         palette.setColor(group, QPalette.ColorRole.Button, button)
@@ -199,9 +204,154 @@ def palette_from_omarchy(colors):
         palette.setColor(group, QPalette.ColorRole.Link, accent)
         palette.setColor(group, QPalette.ColorRole.Light, alternate)
         palette.setColor(group, QPalette.ColorRole.Mid, mid)
-        palette.setColor(group, QPalette.ColorRole.Dark, _mix_colors(background, text, 0.55))
+        palette.setColor(group, QPalette.ColorRole.Dark, dark)
         palette.setColor(group, QPalette.ColorRole.Shadow, background)
     return palette
+
+
+def palette_from_omarchy(colors):
+    """Map Omarchy background, text, and accent onto Qt palette roles.
+
+    Edit the role lines in ``_palette_with_colors`` to change which
+    color paints a part of the window. The mixes below are the Omarchy
+    mapping: fields match the window, and buttons are a short step
+    toward the text color. PyQtGraph reads Base, Text, Highlight, and
+    Accent. style.qss looks up the same roles with palette().
+    """
+    background = QColor(colors["background"])
+    text = QColor(colors["foreground"])
+    accent = QColor(colors["accent"])
+    return _palette_with_colors(
+        background,
+        text,
+        accent,
+        _mix_colors(background, text, 0.08),
+        _mix_colors(background, text, 0.14),
+        _mix_colors(background, text, 0.35),
+        background,
+    )
+
+
+# The Linux desktop paints this warm dark set from its own theme.
+# Windows and macOS do not have that theme, so these are their default
+# dark colors. background is in #140d0d–#1a1212. button, base, and
+# alternate are in #2a2222–#3a3030. accent is the muted periwinkle.
+BUILTIN_DARK = {
+    "background": "#1a1212",
+    "foreground": "#f0ecec",
+    "accent": "#7b8fc9",
+    "button": "#322a2a",
+    "base": "#2a2222",
+    "alternate": "#3a3030",
+    "mid": "#5a504c",
+    "midlight": "#403836",
+}
+
+# Same accent on warm light surfaces. Used when the OS scheme is light,
+# so Windows and macOS still follow that setting.
+BUILTIN_LIGHT = {
+    "background": "#f4f0ec",
+    "foreground": "#1a1212",
+    "accent": "#7b8fc9",
+    "button": "#e6ddd6",
+    "base": "#fffcf9",
+    "alternate": "#efe6df",
+    "mid": "#c9beb6",
+    "midlight": "#faf7f4",
+}
+
+
+def prefers_builtin_palette(platform=None):
+    """Windows and macOS do not inherit the Linux desktop theme.
+
+    Linux returns False, so Omarchy and the freedesktop setting stay
+    in charge there. ``platform`` defaults to this process.
+    """
+    if platform is None:
+        platform = sys.platform
+    return platform in ("win32", "darwin")
+
+
+def builtin_palette(scheme):
+    """The Windows and macOS palette for one color scheme.
+
+    Dark, and no preference, use ``BUILTIN_DARK``. That is the default
+    appearance, and it matches the Linux window. Light uses
+    ``BUILTIN_LIGHT`` so an OS light setting still restyles the window.
+    The accent is ``#7b8fc9`` in both.
+    """
+    colors = BUILTIN_LIGHT if scheme == Qt.ColorScheme.Light else BUILTIN_DARK
+    background = QColor(colors["background"])
+    text = QColor(colors["foreground"])
+    accent = QColor(colors["accent"])
+    palette = _palette_with_colors(
+        background,
+        text,
+        accent,
+        QColor(colors["button"]),
+        QColor(colors["alternate"]),
+        QColor(colors["mid"]),
+        QColor(colors["base"]),
+    )
+    # Fusion bevels read Midlight and BrightText. Leaving the defaults
+    # puts a white edge on a dark button.
+    groups = (
+        QPalette.ColorGroup.Active,
+        QPalette.ColorGroup.Inactive,
+        QPalette.ColorGroup.Disabled,
+    )
+    midlight = QColor(colors["midlight"])
+    for group in groups:
+        palette.setColor(group, QPalette.ColorRole.Midlight, midlight)
+        palette.setColor(group, QPalette.ColorRole.BrightText, text)
+        palette.setColor(group, QPalette.ColorRole.LinkVisited, accent)
+    return palette
+
+
+def _use_fusion_style(app):
+    """Use Fusion so palette roles reach buttons, fields, tables, and tabs.
+
+    Windows and macOS native styles draw those controls from the OS
+    theme and skip the palette. Linux must not call this. Its desktop
+    style is what paints the Omarchy colors.
+    """
+    style = app.style()
+    if style is not None and style.objectName().lower() == "fusion":
+        return
+    app.setStyle("Fusion")
+
+
+def apply_builtin_palette(app):
+    """Install the built-in palette for the current OS color scheme.
+
+    Call this on Windows and macOS only. It switches the style to
+    Fusion, then paints ``builtin_palette``. It does not call
+    setColorScheme, so a later OS change can still be read.
+    """
+    _use_fusion_style(app)
+    _install_palette(app, builtin_palette(app.styleHints().colorScheme()))
+
+
+def apply_active_palette(app, platform=None):
+    """Choose and install the palette for this computer.
+
+    Returns ``"omarchy"``, ``"builtin"``, or ``"system"``. Does not
+    reload style.qss. Call ``load_style`` after this so palette() roles
+    are read again.
+
+    Omarchy wins wherever colors.toml is present. Linux otherwise
+    follows the freedesktop light/dark setting and the desktop palette.
+    Windows and macOS use the built-in palette and still switch with
+    the OS light or dark setting.
+    """
+    if apply_omarchy_palette(app):
+        return "omarchy"
+    if prefers_builtin_palette(platform):
+        apply_builtin_palette(app)
+        return "builtin"
+    apply_system_color_scheme(app)
+    sync_palette_to_color_scheme(app)
+    return "system"
 
 
 def apply_omarchy_palette(app):
@@ -449,13 +599,16 @@ def _restyle_after_scheme_change(app, window):
     def apply_when_ready():
         global _restyle_queued
         _restyle_queued = False
-        if apply_omarchy_palette(app):
-            load_style(app)
-        else:
-            apply_system_color_scheme(app)
+        kind = apply_active_palette(app)
+        load_style(app)
+        # Qt can replace the palette while the stylesheet is applied.
+        # Put the chosen colors back. Omarchy already installed its
+        # palette inside apply_active_palette, and a second pass would
+        # re-read colors.toml for no gain.
+        if kind == "system":
             sync_palette_to_color_scheme(app)
-            load_style(app)
-            sync_palette_to_color_scheme(app)
+        elif kind == "builtin":
+            apply_builtin_palette(app)
         board = getattr(window, "graph_board", None)
         if board is not None:
             board.apply_plot_palette()

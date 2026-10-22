@@ -21,7 +21,7 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 | File | Purpose |
 | --- | --- |
 | `main.py` | Entry point, menus, the three mode pages, data-set tabs, the read-only table, and the signal connections that join the other modules. |
-| `appearance.py` | Desktop light/dark palette, the Omarchy theme file, and `load_style` for `style.qss`. |
+| `appearance.py` | Omarchy theme file, Linux light/dark palette, the Windows and macOS built-in palette, and `load_style` for `style.qss`. |
 | `dataset.py` | In-memory rows, CSV / xlsx / ods / paste reading, numeric parsing, aggregations, and statistics. Row order here is the order used by plots and playback. |
 | `graph_view.py` | `GRAPH_KINDS`, one `GraphPanel` per graph, the board that holds several graphs (`GraphBoard`), and record playback. |
 | `serial_panel.py` | Live USB serial capture with `QSerialPort`. This is not playback. |
@@ -79,8 +79,9 @@ Startup does not load `sample_data.csv`. The graph board is empty until you add 
 ### `appearance.py`
 
 - `remember_desktop_palette` keeps the colors Qt had at startup.
-- `apply_omarchy_palette` reads `colors.toml` from `omarchy_theme_dir()` when that file exists. The folder comes from `XDG_STATE_HOME` or the home directory's `.local/state`. It does not name one computer.
-- `apply_system_color_scheme` and `sync_palette_to_color_scheme` follow the freedesktop light/dark setting on other machines.
+- `apply_active_palette` picks one path. `apply_omarchy_palette` reads `colors.toml` from `omarchy_theme_dir()` when that file exists. The folder comes from `XDG_STATE_HOME` or the home directory's `.local/state`. It does not name one computer.
+- On other Linux desktops, `apply_system_color_scheme` and `sync_palette_to_color_scheme` follow the freedesktop light/dark setting. The platform style stays in place.
+- On Windows and macOS, `apply_builtin_palette` switches to Fusion and installs `BUILTIN_DARK` (or `BUILTIN_LIGHT` when the OS scheme is light). Fusion is what lets buttons, fields, tables, and tabs use those roles. Linux does not take this path.
 - `load_style` reads `style.qss` through `bundled_path`.
 - `_DesktopSchemeWatcher` and `_OmarchyThemeWatcher` call `_restyle_after_scheme_change` when the theme changes while the window is open. `main` keeps both objects on the window so they are not thrown away.
 
@@ -130,7 +131,7 @@ Manual entry and the graph table share one `RecordTableModel`. The graph view pu
 
 **Playback timer.** `GraphPanel._interval_ms` in `graph_view.py` returns `PLAYBACK_FRAME_MS` (33). At 1x, `_advance` moves `PLAYBACK_ROWS_PER_SECOND` (2) rows each second, a fraction of a row per tick. The speeds in the combo are 0.5x, 1x, 2x, and 4x. `GraphPanel.__init__` creates the `QTimer` and connects `timeout` to `_advance`. `_play` starts the timer. `_advance` updates the existing line, scatter, or marker with `setData`. It does not sleep, and it does not create a new plot item. `show_dataset` stops that panel's timer.
 
-**Colors.** Do not type a hex color into `style.qss`. Palette roles are filled in `appearance.py` (`palette_from_omarchy` on Omarchy, the desktop palette otherwise). Pie slices come from `slice_color` in `graph_view.py`, rotated from the highlight color. The playback marker and the revealed line can be set per graph from `LOOK_COLORS`. The "Theme" choice uses the desktop accent and highlight.
+**Colors.** Do not type a hex color into `style.qss`. Palette roles are filled in `appearance.py` (`palette_from_omarchy` on Omarchy, the desktop palette on other Linux machines, `builtin_palette` on Windows and macOS). Pie slices come from `slice_color` in `graph_view.py`, rotated from the highlight color. The playback marker and the revealed line can be set per graph from `LOOK_COLORS`. The "Theme" choice uses the accent and highlight from the application palette. Plots read that same palette in `GraphPanel.apply_plot_palette`.
 
 **A column, by hand.** Manual entry's Add column button calls `_add_manual_column`, which calls `DataSet.add_column`. Add row calls `DataSet.add_blank_row`. A cell edit calls `RecordTableModel.setData`, which calls `DataSet.set_cell`.
 

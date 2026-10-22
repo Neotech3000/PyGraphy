@@ -51,11 +51,9 @@ from appearance import (
     _DesktopSchemeWatcher,
     _OmarchyThemeWatcher,
     _restyle_after_scheme_change,
-    apply_omarchy_palette,
-    apply_system_color_scheme,
+    apply_active_palette,
     load_style,
     remember_desktop_palette,
-    sync_palette_to_color_scheme,
 )
 from dataset import (
     DataSet,
@@ -1485,12 +1483,11 @@ class PyGraphyWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("PyGraphy")
-    # Leave the platform style alone so Windows, macOS, and Linux
-    # use the desktop theme. Do not call setStyle("Fusion").
+    # Linux keeps the platform style so the desktop theme can paint the
+    # window. apply_active_palette switches Windows and macOS to Fusion,
+    # because those native styles ignore palette roles.
     remember_desktop_palette(app)
-    if not apply_omarchy_palette(app):
-        apply_system_color_scheme(app)
-        sync_palette_to_color_scheme(app)
+    apply_active_palette(app)
     load_style(app)
     window = PyGraphyWindow()
     hints = app.styleHints()

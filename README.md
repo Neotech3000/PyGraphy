@@ -28,7 +28,7 @@ The graph types are Line, Scatter, Area, Step, Bar, Horizontal bar, Histogram, a
 
 Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph. The pie is a donut drawn with `QPainter`, because `PyQt6.QtCharts` is not installed. Box plots and candlesticks are not included. PyQtGraph does not draw those from one line or one bar item.
 
-On Omarchy, the window uses the active theme's background, text, and accent, and it updates when that theme file changes. On other computers it follows the desktop light or dark setting.
+On Omarchy, the window uses the active theme's background, text, and accent, and it updates when that theme file changes. On other Linux desktops it follows the freedesktop light or dark setting. On Windows and macOS the same light or dark switch is followed, and the default dark colors are the warm brown and periwinkle palette the Linux window shows.
 
 File, Graph, and Help are the menus. The status bar shows the data-set name, the row count, and whether USB serial is connected.
 
@@ -164,6 +164,10 @@ This copy has not been tested by opening a connected board. The panel lists what
 
 `style.qss` is the only styling file. It uses `palette()` roles, not a fixed hex color, so a light or dark change can restyle the window. Edit a font or a spacing there, then start the app again. A theme change while the app is open is picked up by `appearance.py`, which reads `style.qss` again.
 
+Linux keeps the desktop style. Omarchy reads `colors.toml` from the active theme folder (`XDG_STATE_HOME` or `~/.local/state`, then `omarchy/current/theme`) and applies it again when that file changes. Other Linux desktops follow the freedesktop color-scheme setting. The palette saved at startup is restored when the scheme returns to the one the computer used then. The other side comes from the widget style.
+
+Windows and macOS do not inherit that Linux theme, and their native styles ignore most palette roles. PyGraphy uses the Fusion style there so buttons, fields, tables, tabs, and plots paint from the palette. When the system is dark, or has no preference, the palette is the Linux window's warm dark set: near-black brown `#1a1212`, lighter brown panels (`#2a2222` to `#3a3030`), near-white text, and periwinkle `#7b8fc9` for the selected mode button, the selected tab, the highlighted table row, and the plot line, fill, and markers. A light system setting uses a warm light palette with the same accent. Changing the OS appearance while the app is open applies that palette again.
+
 ## Troubleshooting
 
 **`python3 -m venv` says ensurepip is not available.** Install the distro's venv package (on Debian and Ubuntu, `python3-venv`). Remove the incomplete `.venv` directory and create it again.
@@ -195,7 +199,7 @@ This copy has not been tested by opening a connected board. The panel lists what
 | File | What it is |
 | --- | --- |
 | `main.py` | Entry point. Menus, the three modes, data-set tabs, the read-only table, and the wires between the other modules. |
-| `appearance.py` | Light/dark and Omarchy palette, and loading `style.qss`. |
+| `appearance.py` | Omarchy palette, Linux light/dark, the Windows and macOS built-in palette, and loading `style.qss`. |
 | `dataset.py` | In-memory rows, CSV / xlsx / ods / paste reading, numeric parsing, aggregations, and statistics. |
 | `graph_view.py` | `GRAPH_KINDS`, one `GraphPanel` per graph, the donut, record playback, and the `GraphBoard` that lays panels out. |
 | `serial_panel.py` | Live USB serial capture with `QSerialPort`. Not playback. |
