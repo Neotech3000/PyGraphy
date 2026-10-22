@@ -4,7 +4,9 @@
 Graph menu, and each panel's type box. ``GraphPanel`` draws one series of
 one type. ``GraphBoard`` lays several panels in a grid. Each panel owns
 its rows and its own ``QTimer``, so one panel's playback does not move
-another.
+another. ``build_view_all_page`` builds the presentation page. That
+page uses one ``QTimer`` for every graph and does not start the
+panel timers.
 
 Line, scatter, area, step, bar, horizontal bar, and histogram use
 PyQtGraph. The plot items are created once and updated with ``setData``
@@ -96,6 +98,49 @@ FIT_PADDING = 0.08
 NEUTRAL_RANGE = (0.0, 1.0)
 
 
+def view_all_shape(count):
+    """Return ``(columns, rows)`` for the View all bubbles.
+
+    One graph is a single cell, so the layout gives it the whole page.
+    Two graphs are one row of two columns. Three and four use two
+    columns and form a grid. More than four uses a near-square grid.
+    The page then stretches every cell by the same amount, so extra
+    graphs shrink to fit. No pixel size is chosen here.
+    """
+    if count <= 1:
+        return 1, 1
+    if count == 2:
+        return 2, 1
+    if count <= 4:
+        columns = 2
+    else:
+        columns = int(count ** 0.5)
+        if columns * columns < count:
+            columns += 1
+    rows = (count + columns - 1) // columns
+    return columns, rows
+
+
+def _loop_point(xs, ys, reveal, count):
+    """A point on the closed path through ``xs`` and ``ys``.
+
+    The last step walks back to the first point, so a playhead that
+    passes the end arrives at the start instead of jumping.
+    """
+    if not xs or count <= 0:
+        return None, None
+    if len(xs) == 1:
+        return xs[0], ys[0]
+    travel = (float(reveal) % count) / count * len(xs)
+    index = int(travel) % len(xs)
+    frac = travel - int(travel)
+    nxt = (index + 1) % len(xs)
+    return (
+        xs[index] + (xs[nxt] - xs[index]) * frac,
+        ys[index] + (ys[nxt] - ys[index]) * frac,
+    )
+
+
 def _finite_span(low, high):
     """Return a range that is never a single point.
 
@@ -148,7 +193,16 @@ class DonutChart(QWidget):
         self._labels = []
         self._values = []
         self._message = "No rows yet."
+        self._rotation = 0.0
         self.setMinimumHeight(220)
+
+    def set_rotation(self, turns):
+        """Spin the ring by a fraction of a turn. 1.0 is the same as 0.0."""
+        turns = float(turns) % 1.0
+        if abs(turns - self._rotation) < 1e-6:
+            return
+        self._rotation = turns
+        self.update()
 
     def set_chart(self, title, labels, values, message):
         self._title = title
@@ -196,7 +250,7 @@ class DonutChart(QWidget):
         left = 16
         top = 44
         painter.setPen(QPen(background, 1))
-        start = 90 * 16
+        start = int((90 + self._rotation * 360) * 16)
         remaining = 360 * 16
         for index, value in enumerate(self._values):
             if index == len(self._values) - 1:
@@ -1401,6 +1455,117 @@ class GraphPanel(QFrame):
         else:
             self.playback_label.setText(f"Row {position} of {count}")
 
+    def halt_playback(self):
+        """Stop this panel's timer so the View all clock can drive the plot."""
+        self._timer.stop()
+        self._playing = False
+        self.play_button.setEnabled(True)
+        self.pause_button.setEnabled(False)
+
+    def paint_loop_frame(self, phase):
+        """Move this graph for one shared playhead. Do not rebuild items.
+
+        ``phase`` is the elapsed row count from the View all timer.
+        This graph wraps on its own row count. The axis range is left
+        where ``fit_data`` put it. This does not start ``self._timer``.
+        """
+        self.halt_playback()
+        dataset = self._dataset
+        if dataset is None or not dataset.rows:
+            return
+        count = len(dataset.rows)
+        reveal = float(phase) % count
+        self._reveal = reveal
+        if self._kind == "pie":
+            self.donut.set_rotation(reveal / count)
+            return
+        if self._kind in XY_KINDS:
+            self._paint_circular_xy(reveal, count)
+            return
+        self._paint_circular_category(reveal, count)
+
+    def _paint_circular_xy(self, reveal, count):
+        """Keep the full series on the existing items and glide the marker."""
+        headers = self._dataset.headers
+        rows = self._dataset.rows
+        series = xy_series(
+            headers,
+            rows,
+            self.x_combo.currentText(),
+            self.y_combo.currentText(),
+        )
+        xs = list(series.x_values)
+        ys = list(series.y_values)
+        x, y = _loop_point(xs, ys, reveal, count)
+        step = "right" if self._kind == "step" else None
+        fill = 0 if self._kind == "area" else None
+        color = self._series_color()
+        pen = pg.mkPen(color, width=2)
+        brush = None
+        if fill is not None:
+            fill_color = QColor(color)
+            fill_color.setAlpha(90)
+            brush = pg.mkBrush(fill_color)
+        self.full_line_item.setData([], [])
+        self.full_line_item.setVisible(False)
+        if self._kind in LINE_KINDS and xs:
+            self.line_item.setVisible(True)
+            self.line_item.setData(
+                xs,
+                ys,
+                pen=pen,
+                stepMode=step,
+                fillLevel=fill,
+                brush=brush,
+            )
+        else:
+            self.line_item.setData([], [])
+            self.line_item.setVisible(False)
+        if self._kind == "scatter" and xs:
+            self.scatter_item.setVisible(True)
+            self.scatter_item.setData(xs, ys, brush=pg.mkBrush(color))
+        else:
+            self.scatter_item.setData([], [])
+            self.scatter_item.setVisible(False)
+        self._place_loop_marker(x, y)
+
+    def _paint_circular_category(self, reveal, count):
+        """Draw the full bars, then glide a marker around them."""
+        headers = self._dataset.headers
+        rows = self._dataset.rows
+        if self._kind == "histogram":
+            self._draw_histogram(headers, rows)
+            values, _blank, _missing, _text = numeric_series(
+                headers, rows, self.hist_combo.currentText()
+            )
+            centers, counts, _width = histogram_bins(values, self.bin_spin.value())
+            xs, ys = list(centers), list(counts)
+        else:
+            self._draw_bars(headers, rows, horizontal=self._kind == "hbar")
+            _labels, numbers, _message = category_aggregate(
+                headers,
+                rows,
+                self.bar_category.currentText(),
+                self.bar_value.currentText(),
+                self.bar_how.currentText() or "mean",
+            )
+            if self._kind == "hbar":
+                xs, ys = list(numbers), list(range(len(numbers)))
+            else:
+                xs, ys = list(range(len(numbers))), list(numbers)
+        x, y = _loop_point(xs, ys, reveal, count)
+        self._place_loop_marker(x, y)
+
+    def _place_loop_marker(self, x, y):
+        self.marker_item.setVisible(True)
+        self.marker_item.setSize(self._marker_size)
+        self.marker_item.setBrush(pg.mkBrush(self._marker_qcolor()))
+        self.marker_item.setPen(pg.mkPen(self._series_color(), width=1))
+        if x is None:
+            self.marker_item.setData([], [])
+        else:
+            self.marker_item.setData([x], [y])
+
 
 class GraphBoard(QWidget):
     """The comparison page: several GraphPanel widgets in a grid.
@@ -1411,6 +1576,7 @@ class GraphBoard(QWidget):
     """
 
     selection_changed = pyqtSignal()
+    panels_changed = pyqtSignal()
     import_requested = pyqtSignal(object)
     remove_requested = pyqtSignal(object)
 
@@ -1482,6 +1648,7 @@ class GraphBoard(QWidget):
         self._columns = self._wanted_columns()
         self._reflow()
         self.select_panel(panel)
+        self.panels_changed.emit()
         return panel
 
     def remove_panel(self, panel):
@@ -1500,6 +1667,7 @@ class GraphBoard(QWidget):
             else:
                 self.selection_changed.emit()
         self._reflow()
+        self.panels_changed.emit()
 
     def select_panel(self, panel):
         if panel not in self._panels:
@@ -1555,3 +1723,248 @@ class GraphBoard(QWidget):
     def _on_panel_changed(self, panel):
         if panel is self._selected:
             self.selection_changed.emit()
+
+
+class ViewBubble(QFrame):
+    """A rounded frame: the graph name, then its plot. No settings."""
+
+    def __init__(self, name):
+        super().__init__()
+        self.setObjectName("viewBubble")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(0, 0)
+        self.name_label = QLabel(name)
+        self.name_label.setObjectName("sectionLabel")
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.body = QVBoxLayout()
+        self.body.setContentsMargins(0, 0, 0, 0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 14)
+        layout.setSpacing(8)
+        layout.addWidget(self.name_label)
+        layout.addLayout(self.body, stretch=1)
+
+
+class ViewAllPage(QWidget):
+    """Every graph, with one Play button for all of them.
+
+    The plots are borrowed from the panels, so each bubble shows that
+    panel's type, rows, and fitted range. One QTimer advances every
+    graph. The panel timers stay stopped while this page is playing.
+    """
+
+    def __init__(self, board):
+        super().__init__()
+        self.setObjectName("viewAllPage")
+        self._board = board
+        self._active = False
+        self._playing = False
+        self._phase = 0.0
+        self._borrowed = []
+        self._bubbles = []
+        self._columns = 1
+        self._rows = 1
+
+        self._empty = QLabel(
+            "No graphs yet. Next: press Graph, then Add graph. "
+            "This page shows every graph together."
+        )
+        self._empty.setObjectName("emptyState")
+        self._empty.setWordWrap(True)
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._host = QWidget()
+        self._host.setObjectName("viewAllGrid")
+        self._grid = QGridLayout(self._host)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(12)
+        self._grid.setVerticalSpacing(12)
+
+        self.bar = QWidget()
+        self.bar.setObjectName("viewAllBar")
+        self.bar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self.play_button = QPushButton("Play")
+        self.play_button.setObjectName("viewAllPlay")
+        self.play_button.clicked.connect(self.play_loop)
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setObjectName("viewAllPause")
+        self.pause_button.clicked.connect(self.pause_loop)
+        self.pause_button.setEnabled(False)
+        self.speed_combo = QComboBox()
+        self.speed_combo.setObjectName("viewAllSpeed")
+        for label, value in (("0.5x", 0.5), ("1x", 1.0), ("2x", 2.0), ("4x", 4.0)):
+            self.speed_combo.addItem(label, value)
+        self.speed_combo.setCurrentText("1x")
+        bar_layout = QHBoxLayout(self.bar)
+        bar_layout.setContentsMargins(0, 0, 0, 0)
+        bar_layout.setSpacing(12)
+        bar_layout.addWidget(QLabel("Playback"))
+        bar_layout.addWidget(self.play_button)
+        bar_layout.addWidget(self.pause_button)
+        bar_layout.addWidget(QLabel("Speed"))
+        bar_layout.addWidget(self.speed_combo)
+        bar_layout.addStretch(1)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(12)
+        layout.addWidget(self._host, stretch=1)
+        layout.addWidget(self._empty)
+        layout.addWidget(self.bar)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self.advance_loop)
+        self._board.panels_changed.connect(self.refresh)
+        self._show_empty()
+
+    def set_active(self, active):
+        """Show or leave the page. Leaving stops the loop and returns the plots."""
+        if not active:
+            self.pause_loop()
+            self._phase = 0.0
+            self._release_all()
+            self._active = False
+            return
+        self._active = True
+        self._phase = 0.0
+        self.refresh()
+
+    def refresh(self):
+        """Rebuild the bubbles from the graphs that exist right now."""
+        if not self._active:
+            return
+        self._return_charts()
+        self._clear_bubbles()
+        panels = self._board.panels()
+        if not panels:
+            self._show_empty()
+            return
+        self._empty.setVisible(False)
+        self._host.setVisible(True)
+        self._columns, self._rows = view_all_shape(len(panels))
+        self._clear_stretches()
+        for index, panel in enumerate(panels):
+            panel.halt_playback()
+            bubble = ViewBubble(panel.name)
+            chart = self._borrow_chart(panel)
+            panel._redraw()
+            panel.fit_data()
+            bubble.body.addWidget(chart)
+            row = index // self._columns
+            column = index % self._columns
+            self._grid.addWidget(bubble, row, column)
+            self._bubbles.append(bubble)
+        for column in range(self._columns):
+            self._grid.setColumnStretch(column, 1)
+        for row in range(self._rows):
+            self._grid.setRowStretch(row, 1)
+
+    def play_loop(self):
+        """Start every graph from the shared playhead. Panel timers stay off."""
+        if self._playing:
+            return
+        if not self._board.panels():
+            return
+        for panel in self._board.panels():
+            panel.halt_playback()
+        self._playing = True
+        self.play_button.setEnabled(False)
+        self.pause_button.setEnabled(True)
+        self._timer.start(PLAYBACK_FRAME_MS)
+
+    def pause_loop(self):
+        """Stop the shared clock and leave every graph where it is."""
+        self._timer.stop()
+        self._playing = False
+        self.play_button.setEnabled(True)
+        self.pause_button.setEnabled(False)
+
+    def advance_loop(self):
+        """Move every graph one step, then return.
+
+        The timer calls this. It does not sleep, and it does not build
+        new plot items. When a graph passes its last row, its playhead
+        wraps to the start.
+        """
+        speed = float(self.speed_combo.currentData() or 1.0)
+        step = PLAYBACK_ROWS_PER_SECOND * speed * (PLAYBACK_FRAME_MS / 1000.0)
+        self._phase += step
+        for panel in self._board.panels():
+            panel.paint_loop_frame(self._phase)
+
+    def _show_empty(self):
+        self._host.setVisible(False)
+        self._empty.setVisible(True)
+        self._columns, self._rows = 1, 1
+
+    def _clear_stretches(self):
+        for index in range(max(self._grid.rowCount(), self._grid.columnCount())):
+            self._grid.setRowStretch(index, 0)
+            self._grid.setColumnStretch(index, 0)
+
+    def _clear_bubbles(self):
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+        self._bubbles = []
+
+    def _borrow_chart(self, panel):
+        chart = panel.chart_stack
+        if getattr(panel, "_view_all_range", None) is None:
+            span = panel.plot.viewRange()
+            panel._view_all_range = (
+                (float(span[0][0]), float(span[0][1])),
+                (float(span[1][0]), float(span[1][1])),
+            )
+        panel.plot.setMinimumHeight(0)
+        panel.donut.setMinimumHeight(0)
+        chart.setMinimumHeight(0)
+        chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        panel.layout().removeWidget(chart)
+        chart.setParent(None)
+        self._borrowed.append(panel)
+        return chart
+
+    def _return_charts(self):
+        for panel in list(self._borrowed):
+            self._return_chart(panel)
+        self._borrowed = []
+
+    def _return_chart(self, panel):
+        chart = panel.chart_stack
+        chart.setParent(None)
+        panel.plot.setMinimumHeight(150)
+        panel.donut.setMinimumHeight(220)
+        layout = panel.layout()
+        if layout.indexOf(chart) >= 0:
+            return
+        index = layout.indexOf(panel.note_label)
+        if index < 0:
+            layout.addWidget(chart, stretch=1)
+        else:
+            layout.insertWidget(index + 1, chart, stretch=1)
+
+    def _release_all(self):
+        panels = list(self._borrowed)
+        self._return_charts()
+        self._clear_bubbles()
+        self._show_empty()
+        for panel in panels:
+            panel.donut.set_rotation(0)
+            panel._redraw()
+            saved = getattr(panel, "_view_all_range", None)
+            if saved is not None:
+                del panel._view_all_range
+                panel.plot.getViewBox().setRange(
+                    xRange=(saved[0][0], saved[0][1]),
+                    yRange=(saved[1][0], saved[1][1]),
+                    padding=0,
+                )
+
+
+def build_view_all_page(board):
+    """Build the presentation page. ``advance_loop`` moves every graph."""
+    return ViewAllPage(board)

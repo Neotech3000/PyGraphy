@@ -22,6 +22,7 @@ QWidget#workspacePage,
 QWidget#dataTableSide,
 QWidget#manualPage,
 QWidget#serialPage,
+QWidget#viewAllPage,
 QWidget#graphBoard {
     background-color: palette(window);
     color: palette(window-text);
@@ -63,7 +64,8 @@ QGroupBox::title {
 
 QPushButton#mode-graph,
 QPushButton#mode-manual,
-QPushButton#mode-serial {
+QPushButton#mode-serial,
+QPushButton#mode-viewall {
     font-weight: 600;
     padding: 8px 18px;
     min-height: 32px;
@@ -71,9 +73,20 @@ QPushButton#mode-serial {
 
 QPushButton#mode-graph:checked,
 QPushButton#mode-manual:checked,
-QPushButton#mode-serial:checked {
+QPushButton#mode-serial:checked,
+QPushButton#mode-viewall:checked {
     background-color: palette(highlight);
     color: palette(highlighted-text);
+}
+
+QFrame#viewBubble {
+    border: 1px solid palette(mid);
+    border-radius: 18px;
+    background: palette(window);
+}
+
+QWidget#viewAllBar {
+    background: palette(window);
 }
 
 QPushButton[graphChoice="true"] {

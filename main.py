@@ -66,7 +66,7 @@ from dataset import (
     sample_csv_path,
     write_records_csv,
 )
-from graph_view import GRAPH_KINDS, GraphBoard
+from graph_view import GRAPH_KINDS, GraphBoard, build_view_all_page
 from serial_panel import SerialPanel
 
 
@@ -302,6 +302,7 @@ class PyGraphyWindow(QMainWindow):
 
         self.home = HomePage(self._choose_kind)
         self.workspace = self._build_workspace()
+        self.view_all_page = build_view_all_page(self.graph_board)
         self.stack = QStackedWidget()
         self.stack.addWidget(self.home)
         self.stack.addWidget(self.workspace)
@@ -311,6 +312,7 @@ class PyGraphyWindow(QMainWindow):
         self.serial_page = self._build_serial_page()
         self.mode_stack = QStackedWidget()
         self.mode_stack.addWidget(self.stack)
+        self.mode_stack.addWidget(self.view_all_page)
         self.mode_stack.addWidget(self.manual_page)
         self.mode_stack.addWidget(self.serial_page)
 
@@ -428,6 +430,7 @@ class PyGraphyWindow(QMainWindow):
             ("graph", "Graph"),
             ("manual", "Manual entry"),
             ("serial", "Microcontroller"),
+            ("viewall", "View all"),
         ):
             button = QPushButton(text)
             button.setObjectName(f"mode-{mode}")
@@ -558,13 +561,18 @@ class PyGraphyWindow(QMainWindow):
 
     def _set_mode(self, mode):
         """Show one page. This does not replace or delete the active tab's rows."""
+        if mode != "viewall":
+            self.view_all_page.set_active(False)
         self._mode = mode
         pages = {
             "graph": self.stack,
             "manual": self.manual_page,
             "serial": self.serial_page,
+            "viewall": self.view_all_page,
         }
         self.mode_stack.setCurrentWidget(pages[mode])
+        if mode == "viewall":
+            self.view_all_page.set_active(True)
         if mode == "manual":
             self._bind_manual_view()
         for key, button in self.mode_buttons.items():
@@ -1386,6 +1394,7 @@ class PyGraphyWindow(QMainWindow):
             "Clear table forgets the selected graph's table and does not change that file.\n"
             "Drag the divider between the table and the graphs to resize them.\n\n"
             "Graph mode shows the graphs and, from All graph types, the home page.\n"
+            "View all shows every graph together. Play on that page moves them all.\n"
             "Manual entry edits the table you are looking at. Add table starts an empty one.\n"
             "The Tables tabs on that page switch tables. The grid shows only the selected one.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
