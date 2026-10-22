@@ -82,7 +82,7 @@ KIND_PAGE = {
     "hbar": 2,
     "pie": 3,
 }
-# "theme" is not a QColor, so the panel uses the desktop palette.
+# "theme" is not a QColor, so the panel uses the application palette.
 # The other entries are named colors for this one panel's marker or line.
 LOOK_COLORS = (
     ("Theme", "theme"),
@@ -1035,7 +1035,7 @@ class GraphPanel(QFrame):
         edit.blockSignals(False)
 
     def apply_plot_palette(self):
-        """Paint the plot with the desktop palette. No fixed black or white."""
+        """Paint the plot from the application palette. No fixed black or white."""
         background = _role_color(QPalette.ColorRole.Window)
         ink = _role_color(QPalette.ColorRole.Text)
         series = _role_color(QPalette.ColorRole.Highlight)

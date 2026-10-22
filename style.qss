@@ -4,10 +4,17 @@
 
    palette(window), palette(window-text), palette(button),
    palette(highlight), palette(highlighted-text), and palette(base)
-   come from the desktop theme. On Omarchy, main.py fills those roles
-   from the active theme. Other machines keep the light or dark
-   desktop setting. Do not type a hex color here. A hex color would
-   stay the same when the theme changes.
+   come from the active palette. On Omarchy, appearance.py fills those
+   roles from the active theme. Other Linux desktops keep the
+   freedesktop light or dark palette. Windows and macOS use the
+   built-in palette and still follow the OS light or dark setting.
+   Do not type a hex color here. A hex color would stay the same
+   when the theme changes.
+
+   This file is the same on every platform. Windows and macOS draw
+   their controls with Fusion, which paints them from these same
+   palette roles, so they need no extra rules here. Adding rules for
+   those widgets would also change how the Linux window looks.
 
    To change a font, edit font-size on QLabel#homeTitle.
    To change spacing, edit padding on the mode buttons or min-height
