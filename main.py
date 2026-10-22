@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QHeaderView,
     QSplitter,
     QStackedWidget,
@@ -318,6 +319,8 @@ class PyGraphyWindow(QMainWindow):
         self.notice.setVisible(False)
 
         shell = QWidget()
+        shell.setObjectName("appShell")
+        shell.setAutoFillBackground(True)
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(16, 12, 16, 12)
         shell_layout.setSpacing(12)
@@ -337,6 +340,7 @@ class PyGraphyWindow(QMainWindow):
 
     def _build_workspace(self):
         page = QWidget()
+        page.setObjectName("workspacePage")
         header = QHBoxLayout()
         self.view_label = QLabel("No graph selected")
         self.view_label.setObjectName("sectionLabel")
@@ -371,10 +375,14 @@ class PyGraphyWindow(QMainWindow):
         table_label.setObjectName("sectionLabel")
         self.clear_button = QPushButton("Clear table")
         self.clear_button.setObjectName("clearTable")
+        self.clear_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.clear_button.clicked.connect(self._clear_table)
+        # The button used to sit after the stretch, on the splitter edge.
+        # Dragging the divider then slid Clear table with the handle.
+        # The stretch stays after the button so the button stays put.
         table_tools.addWidget(table_label)
-        table_tools.addStretch(1)
         table_tools.addWidget(self.clear_button)
+        table_tools.addStretch(1)
 
         table_side = QWidget()
         table_side.setObjectName("dataTableSide")
@@ -444,6 +452,9 @@ class PyGraphyWindow(QMainWindow):
         self.column_name_edit = QLineEdit()
         self.column_name_edit.setObjectName("columnName")
         self.column_name_edit.setPlaceholderText("Column name")
+        add_table = QPushButton("Add table")
+        add_table.setObjectName("addTable")
+        add_table.clicked.connect(self._add_manual_table)
         add_column = QPushButton("Add column")
         add_column.setObjectName("addColumn")
         add_column.clicked.connect(self._add_manual_column)
@@ -457,6 +468,7 @@ class PyGraphyWindow(QMainWindow):
         controls = QHBoxLayout(tools)
         controls.setSpacing(12)
         controls.addWidget(self.column_name_edit, stretch=1)
+        controls.addWidget(add_table)
         controls.addWidget(add_column)
         controls.addWidget(add_row)
         controls.addWidget(delete_row)
@@ -476,8 +488,8 @@ class PyGraphyWindow(QMainWindow):
         self.manual_table.verticalHeader().setVisible(True)
 
         self.manual_empty = QLabel(
-            "No data set is open. Next: type a column name and press Add column. "
-            "That starts a tab named Manual."
+            "No data set is open. Next: press Add table, then type a column name "
+            "and press Add column."
         )
         self.manual_empty.setObjectName("emptyState")
         self.manual_empty.setWordWrap(True)
@@ -972,8 +984,8 @@ class PyGraphyWindow(QMainWindow):
         if tab is None:
             self.manual_table.setModel(None)
             self.manual_empty.setText(
-                "No data set is open. Next: type a column name and press Add column. "
-                "That starts a tab named Manual."
+                "No data set is open. Next: press Add table, then type a column name "
+                "and press Add column."
             )
             self.manual_empty.setVisible(True)
             self.manual_caption.setText(
@@ -1016,6 +1028,23 @@ class PyGraphyWindow(QMainWindow):
             panel.show_dataset(tab.dataset)
         else:
             panel.note_rows_changed(headers_changed)
+
+    def _add_manual_table(self):
+        """Open a new empty table and stay on Manual entry.
+
+        The new table does not copy another table's rows. Add column,
+        Add row, and Delete row then apply to this table.
+        """
+        panel = self.graph_board.add_panel()
+        dataset = DataSet(panel.name)
+        self._add_tab(dataset, panel)
+        panel.show_dataset(dataset)
+        self._bind_manual_view()
+        self._update_status()
+        self._set_notice(
+            f"Added an empty table on {panel.name}. "
+            "Other tables were not copied. Type a column name, then press Add column."
+        )
 
     def _manual_tab(self):
         panel = self._target_panel()
@@ -1250,7 +1279,7 @@ class PyGraphyWindow(QMainWindow):
             "Clear table forgets the selected graph's table and does not change that file.\n"
             "Drag the divider between the table and the graphs to resize them.\n\n"
             "Graph mode shows the graphs and, from All graph types, the home page.\n"
-            "Manual entry edits the same in-memory rows. Closing the app does not save them.\n"
+            "Manual entry edits the table you are looking at. Add table starts an empty one.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
             "Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.\n"
             "Pie or donut is drawn with QPainter. PyQtGraph does not draw "
@@ -1416,6 +1445,8 @@ def palette_from_omarchy(colors):
     background = QColor(colors["background"])
     text = QColor(colors["foreground"])
     accent = QColor(colors["accent"])
+    # Window and Base stay the theme background with no blend.
+    # A blend made the window a step away from the theme color.
     button = _mix_colors(background, text, 0.08)
     alternate = _mix_colors(background, text, 0.14)
     mid = _mix_colors(background, text, 0.35)
@@ -1474,7 +1505,10 @@ def apply_omarchy_palette(app):
     if hints.colorScheme() != scheme:
         hints.setColorScheme(scheme)
         _color_scheme_overridden = True
-    _install_palette(app, palette_from_omarchy(colors))
+    palette = palette_from_omarchy(colors)
+    _install_palette(app, palette)
+    for widget in app.topLevelWidgets():
+        widget.setPalette(QPalette(palette))
     return True
 
 

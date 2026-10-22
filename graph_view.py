@@ -118,7 +118,7 @@ class DonutChart(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        background = _role_color(QPalette.ColorRole.Base)
+        background = _role_color(QPalette.ColorRole.Window)
         ink = _role_color(QPalette.ColorRole.Text)
         painter.fillRect(self.rect(), background)
         painter.setPen(ink)
@@ -826,7 +826,7 @@ class GraphPanel(QFrame):
 
     def apply_plot_palette(self):
         """Paint the plot with the desktop palette. No fixed black or white."""
-        background = _role_color(QPalette.ColorRole.Base)
+        background = _role_color(QPalette.ColorRole.Window)
         ink = _role_color(QPalette.ColorRole.Text)
         series = _role_color(QPalette.ColorRole.Highlight)
         marker = _role_color(QPalette.ColorRole.Accent)

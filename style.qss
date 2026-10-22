@@ -16,6 +16,17 @@
    main.py reads this file again then.
 */
 
+QMainWindow,
+QWidget#appShell,
+QWidget#workspacePage,
+QWidget#dataTableSide,
+QWidget#manualPage,
+QWidget#serialPage,
+QWidget#graphBoard {
+    background-color: palette(window);
+    color: palette(window-text);
+}
+
 QLabel#homeTitle {
     font-size: 22pt;
     font-weight: 700;
