@@ -76,6 +76,18 @@ EXAMPLES = (
     ("example_lake.csv", "Lake level (line)", "line", "Lake level"),
     ("example_stairs.csv", "Stair steps (step)", "step", "Stair steps"),
     ("example_cities.csv", "City visitors (bar)", "bar", "City visitors"),
+    ("example_quiz.csv", "Quiz scores (bar)", "bar", "Quiz scores"),
+    ("example_trails.csv", "Trail length (horizontal bar)", "hbar", "Trail length"),
+    ("example_plants.csv", "Plant height (scatter)", "scatter", "Plant height"),
+    ("example_rain.csv", "Weekly rain (area)", "area", "Weekly rain"),
+    (
+        "example_temperature.csv",
+        "Afternoon temperature (smooth curve)",
+        "curve",
+        "Afternoon temperature",
+    ),
+    ("example_tide.csv", "Harbor tide (smooth area)", "sarea", "Harbor tide"),
+    ("example_snacks.csv", "Snack counts (pie)", "pie", "Snack counts"),
 )
 
 
@@ -1460,14 +1472,18 @@ class PyGraphyWindow(QMainWindow):
             "Manual entry edits the table you are looking at. Add table starts an empty one.\n"
             "The Tables tabs on that page switch tables. The grid shows only the selected one.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
-            "Line, scatter, area, step, filled step, stem, bar, horizontal bar, "
-            "and histogram use PyQtGraph.\n"
+            "Line, scatter, area, step, filled step, stem, smooth curve, "
+            "smooth area, bar, horizontal bar, and histogram use PyQtGraph.\n"
             "Pie or donut is drawn with QPainter. PyQtGraph does not draw "
             "pies well, and PyQt6.QtCharts is not installed.\n"
             "Filled step is a stair with the area under it. Stem is a vertical "
-            "line from zero to each point.\n"
+            "line from zero to each point. Smooth curve bends through the "
+            "points. Smooth area fills that curve down to zero.\n"
+            "Bars grow by a shared amount of value. A shorter bar finishes "
+            "while a taller bar is still growing.\n"
             "Box plots and candlesticks are not included, because PyQtGraph "
-            "does not draw them from one line or one bar item.\n\n"
+            "does not draw them from one line or one bar item. Matplotlib "
+            "is not used.\n\n"
             "USB serial is read in the window's event loop. "
             "Record playback only replays rows already in the active data set. "
             "Copy graph is a still picture of the current graph type, not live acquisition.\n\n"

@@ -22,11 +22,11 @@ Every launch opens with no graphs and no rows. The status bar says "No data set"
 
 **Add table** on Manual entry starts a blank table without leaving the page. It does not copy another table's rows. The **Tables** tabs switch which table the grid shows, and each table keeps its own cells.
 
-The graph types are Line, Scatter, Area, Step, Bar, Horizontal bar, Histogram, and Pie or donut.
+The graph types are Line, Scatter, Area, Step, Filled step, Stem, Smooth curve, Smooth area, Bar, Horizontal bar, Histogram, and Pie or donut.
 
 ![All graph types, the page with one button per graph](docs/images/home.png)
 
-Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph. The pie is a donut drawn with `QPainter`, because `PyQt6.QtCharts` is not installed. Box plots and candlesticks are not included. PyQtGraph does not draw those from one line or one bar item.
+Line, scatter, area, step, filled step, stem, smooth curve, smooth area, bar, horizontal bar, and histogram use PyQtGraph. The pie is a donut drawn with `QPainter`, because `PyQt6.QtCharts` is not installed. Box plots and candlesticks are not included. PyQtGraph does not draw those from one line or one bar item. Matplotlib is not used.
 
 On Omarchy, the window uses the active theme's background, text, and accent, and it updates when that theme file changes. On other Linux desktops it follows the freedesktop light or dark setting. On Windows and macOS the same light or dark switch is followed, and the default dark colors are a warm brown and periwinkle set that matches the Linux look.
 

@@ -8,10 +8,11 @@ another. ``build_view_all_page`` builds the presentation page. That
 page uses one ``QTimer`` for every graph and does not start the
 panel timers.
 
-Line, scatter, area, step, bar, horizontal bar, and histogram use
-PyQtGraph. The plot items are created once and updated with ``setData``
-or ``setOpts``. PyQtGraph has no real pie chart, and ``PyQt6.QtCharts``
-is not installed, so ``DonutChart`` paints the donut with ``QPainter``.
+Line, scatter, area, step, smooth curve, bar, horizontal bar, and
+histogram use PyQtGraph. The plot items are created once and updated
+with ``setData`` or ``setOpts``. PyQtGraph has no real pie chart, and
+``PyQt6.QtCharts`` is not installed, so ``DonutChart`` paints the donut
+with ``QPainter``.
 """
 
 import pyqtgraph as pg
@@ -52,9 +53,10 @@ pg.setConfigOption("antialias", True)
 
 # Area fills a line down to zero. Step draws stairs. Filled step is that
 # stair with the area under it. Stem draws a vertical line from zero to
-# each point. Box plots and candlesticks are not listed: PyQtGraph does
-# not draw those from one line or one bar item. Matplotlib and QtCharts
-# are not used.
+# each point. Smooth curve bends through the points. Smooth area is that
+# curve filled down to zero. Box plots and candlesticks are not listed:
+# PyQtGraph does not draw those from one line or one bar item.
+# Matplotlib and QtCharts are not used.
 # KIND_PAGE must have one entry for every kind, or that type has no controls.
 GRAPH_KINDS = (
     ("line", "Line"),
@@ -63,6 +65,8 @@ GRAPH_KINDS = (
     ("step", "Step"),
     ("fstep", "Filled step"),
     ("stem", "Stem"),
+    ("curve", "Smooth curve"),
+    ("sarea", "Smooth area"),
     ("bar", "Bar"),
     ("hbar", "Horizontal bar"),
     ("histogram", "Histogram"),
@@ -77,6 +81,8 @@ KIND_PAGE = {
     "step": 0,
     "fstep": 0,
     "stem": 0,
+    "curve": 0,
+    "sarea": 0,
     "histogram": 1,
     "bar": 2,
     "hbar": 2,
@@ -92,9 +98,11 @@ LOOK_COLORS = (
     ("Orange", QColor(Qt.GlobalColor.darkYellow)),
     ("Yellow", QColor(Qt.GlobalColor.yellow)),
 )
-LINE_KINDS = ("line", "area", "step", "fstep")
+LINE_KINDS = ("line", "area", "step", "fstep", "curve", "sarea")
 STEP_KINDS = ("step", "fstep")
-XY_KINDS = ("line", "scatter", "area", "step", "fstep", "stem")
+SMOOTH_KINDS = ("curve", "sarea")
+XY_KINDS = ("line", "scatter", "area", "step", "fstep", "stem", "curve", "sarea")
+BAR_KINDS = ("bar", "hbar")
 SPEED_CHOICES = (
     ("0.25x", 0.25),
     ("0.5x", 0.5),
@@ -166,6 +174,112 @@ def step_dot(x0, y0, x1, y1, frac):
         return x, y0, [x], [y0]
     y = y0 + (y1 - y0) * ((frac - 0.5) / 0.5)
     return x1, y, [x1, x1], [y0, y]
+
+
+def playback_value_step(speed, frame_ms=PLAYBACK_FRAME_MS):
+    """How much value one frame adds to every bar.
+
+    The amount is in data units, not a fraction of each bar. A short bar
+    and a tall bar both receive this same amount. Vertical bars and
+    horizontal bars use this same step. The short bar stops at its own
+    value while the tall bar is still growing.
+    """
+    return PLAYBACK_ROWS_PER_SECOND * float(speed) * (float(frame_ms) / 1000.0)
+
+
+def grown_bar_values(values, added):
+    """Bar lengths after one shared amount of value has been added.
+
+    ``added`` is not divided by each bar. A bar stops when it reaches its
+    own value. A taller bar keeps that same amount and is still short of
+    its value. Negative bars grow from zero toward their value at the
+    same speed. Returns a new list. The caller's list is not changed.
+    """
+    added = max(0.0, float(added))
+    grown = []
+    for value in values:
+        value = float(value)
+        if value >= 0.0:
+            grown.append(min(value, added))
+        else:
+            grown.append(max(value, -added))
+    return grown
+
+
+def bar_value_span(values):
+    """Value that must be added before the longest bar is full.
+
+    The loop uses this as its length. It is the largest distance from
+    zero, so a taller bar sets the reset point. A shorter bar does not
+    shrink this number.
+    """
+    span = 0.0
+    for value in values:
+        span = max(span, abs(float(value)))
+    return span
+
+
+def _catmull(p0, p1, p2, p3, t):
+    """One coordinate on a curve from ``p1`` to ``p2`` that bends toward the neighbors."""
+    t2 = t * t
+    t3 = t2 * t
+    return 0.5 * (
+        (2.0 * p1)
+        + (-p0 + p2) * t
+        + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+        + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3
+    )
+
+
+def smooth_prefix(xs, ys, reached, pieces=8):
+    """A curve through the points, drawn only as far as ``reached``.
+
+    ``reached`` counts points from the start. 1 is the first point.
+    2.5 is halfway from the second point to the third, along the curve,
+    not along a straight chord. The curve passes through every data
+    point. A straight line chart does not bend between them. No extra
+    package is used. Returns ``(x_values, y_values)``.
+    """
+    xs = [float(value) for value in xs]
+    ys = [float(value) for value in ys]
+    count = len(xs)
+    if count == 0 or len(ys) != count or reached <= 0:
+        return [], []
+    if count == 1 or reached <= 1:
+        return [xs[0]], [ys[0]]
+    limit = min(float(reached), float(count))
+    if limit >= count:
+        last_full = count
+        frac = 0.0
+    else:
+        last_full = int(limit)
+        frac = limit - last_full
+    out_x = [xs[0]]
+    out_y = [ys[0]]
+
+    def point_at(index):
+        index = 0 if index < 0 else count - 1 if index >= count else index
+        return xs[index], ys[index]
+
+    def append_segment(index, t_end):
+        if t_end <= 0:
+            return
+        p0 = point_at(index - 1)
+        p1 = point_at(index)
+        p2 = point_at(index + 1)
+        p3 = point_at(index + 2)
+        steps = max(1, round(pieces * t_end))
+        for step in range(1, steps + 1):
+            t = t_end * step / steps
+            out_x.append(_catmull(p0[0], p1[0], p2[0], p3[0], t))
+            out_y.append(_catmull(p0[1], p1[1], p2[1], p3[1], t))
+
+    end_index = last_full - 1
+    for index in range(end_index):
+        append_segment(index, 1.0)
+    if frac > 0 and end_index < count - 1:
+        append_segment(end_index, frac)
+    return out_x, out_y
 
 
 def fill_speed_combo(combo):
@@ -354,6 +468,7 @@ class GraphPanel(QFrame):
         self._grid = True
         self._playing = False
         self._reveal = 0.0
+        self._bar_added = 0.0
         self._painted_whole = -1
         self._column_signature = None
         self._play_style = "reveal"
@@ -649,6 +764,7 @@ class GraphPanel(QFrame):
         """Switch tabs. Record playback stops so the old position is not reused."""
         self._dataset = dataset
         self._stop_timer()
+        self._bar_added = 0.0
         self._reload_controls()
         self._jump_slider_to_end()
         self._redraw()
@@ -711,7 +827,7 @@ class GraphPanel(QFrame):
                 return NEUTRAL_RANGE, NEUTRAL_RANGE
             y_low = min(series.y_values)
             y_high = max(series.y_values)
-            if self._kind in ("area", "fstep", "stem"):
+            if self._kind in ("area", "fstep", "stem", "sarea"):
                 y_low = min(y_low, 0.0)
                 y_high = max(y_high, 0.0)
             return (
@@ -1146,6 +1262,8 @@ class GraphPanel(QFrame):
             "step": "Step",
             "fstep": "Filled step",
             "stem": "Stem",
+            "curve": "Smooth curve",
+            "sarea": "Smooth area",
         }.get(self._kind, "")
         title_text = f"{y_name} vs {x_name}"
         if prefix:
@@ -1178,7 +1296,9 @@ class GraphPanel(QFrame):
             step = None
         else:
             step = "right"
-        fill = 0 if self._kind in ("area", "fstep") else None
+        if self._kind in SMOOTH_KINDS and not stairs_ready:
+            x_values, y_values = smooth_prefix(list(x_values), list(y_values), len(x_values))
+        fill = 0 if self._kind in ("area", "fstep", "sarea") else None
         revealed = self._revealed_qcolor()
         pen = pg.mkPen(revealed, width=2)
         brush = None
@@ -1191,6 +1311,8 @@ class GraphPanel(QFrame):
             and full_x is not None
             and self._kind in LINE_KINDS
         )
+        if show_full and self._kind in SMOOTH_KINDS:
+            full_x, full_y = smooth_prefix(list(full_x), list(full_y), len(full_x))
         if show_full:
             self.full_line_item.setVisible(True)
             self.full_line_item.setData(
@@ -1298,6 +1420,8 @@ class GraphPanel(QFrame):
                 "step": "Step",
                 "fstep": "Filled step",
                 "stem": "Stem",
+                "curve": "Smooth curve",
+                "sarea": "Smooth area",
             }.get(self._kind, "")
             title_text = f"{y_name} vs {x_name}"
             if prefix:
@@ -1314,6 +1438,16 @@ class GraphPanel(QFrame):
                 message = (message + extra).strip()
             self.note_label.setText(message or "Showing every row in original order.")
             self._painted_whole = whole
+        if self._kind in SMOOTH_KINDS:
+            full = xy_series(headers, rows, x_name, y_name)
+            count = len(full.x_values)
+            if whole >= len(rows):
+                reached = float(count)
+            else:
+                reached = min(float(count), float(whole) + float(frac))
+            line_x, line_y = smooth_prefix(full.x_values, full.y_values, reached)
+            self._set_xy_points(line_x, line_y, stairs_ready=True)
+            return
         if self._kind == "stem":
             if nxt_x is not None:
                 xs.append(nxt_x)
@@ -1369,7 +1503,49 @@ class GraphPanel(QFrame):
         self.bar_item.setOpts(x=centers, height=counts, width=width or 0.8)
         return exclusion_message(blank, missing, text)
 
-    def _draw_bars(self, headers, rows, horizontal=False):
+    def _bar_numbers(self):
+        """Category labels and full values for this panel. Playback does not drop rows."""
+        if self._dataset is None:
+            return [], [], ""
+        how = self.bar_how.currentText() or "mean"
+        return category_aggregate(
+            self._dataset.headers,
+            self._dataset.rows,
+            self.bar_category.currentText(),
+            self.bar_value.currentText(),
+            how,
+        )
+
+    def _bar_value_span(self):
+        """How far the shared playhead runs before this bar chart starts over."""
+        _labels, numbers, _message = self._bar_numbers()
+        return bar_value_span(numbers)
+
+    def _paint_growing_bars(self, added):
+        """Grow every bar by the same amount. Reuse the bar items.
+
+        ``added`` is the shared playhead in data units. A short bar stops
+        at its value. A tall bar keeps growing. The axis range is left
+        where ``fit_data`` put it.
+        """
+        if self._dataset is None:
+            return
+        _labels, numbers, message = self._bar_numbers()
+        grown = grown_bar_values(numbers, added)
+        self._draw_bars(
+            self._dataset.headers,
+            self._dataset.rows,
+            horizontal=self._kind == "hbar",
+            heights=grown,
+        )
+        span = bar_value_span(numbers)
+        extra = (
+            f" Bars are growing by a shared amount ({added:.2f} of {span:.2f}). "
+            "A shorter bar stops at its own value."
+        )
+        self.note_label.setText((message + extra).strip())
+
+    def _draw_bars(self, headers, rows, horizontal=False, heights=None):
         how = self.bar_how.currentText() or "mean"
         labels, numbers, message = category_aggregate(
             headers,
@@ -1378,6 +1554,8 @@ class GraphPanel(QFrame):
             self.bar_value.currentText(),
             how,
         )
+        if heights is not None:
+            numbers = list(heights)
         title, xlabel, ylabel = self._suggest_labels(
             f"{how} of {self.bar_value.currentText() or 'rows'} by {self.bar_category.currentText()}",
             self.bar_category.currentText(),
@@ -1480,6 +1658,19 @@ class GraphPanel(QFrame):
         if count == 0:
             self.playback_label.setText("Load rows before playing a recording.")
             return
+        if self._kind in BAR_KINDS:
+            span = self._bar_value_span()
+            if span <= 0:
+                self.playback_label.setText("Load rows before playing a recording.")
+                return
+            if self._bar_added >= span - 0.001:
+                self._bar_added = 0.0
+            self._playing = True
+            self.play_button.setEnabled(False)
+            self.pause_button.setEnabled(True)
+            self._timer.start(self._interval_ms())
+            self._paint_growing_bars(self._bar_added)
+            return
         if self._reveal >= count - 0.001:
             self._painted_whole = -1
             self._set_slider_quiet(0)
@@ -1497,6 +1688,7 @@ class GraphPanel(QFrame):
     def _reset(self):
         self._stop_timer()
         self._painted_whole = -1
+        self._bar_added = 0.0
         self._set_slider_quiet(0)
         self._redraw()
 
@@ -1512,7 +1704,18 @@ class GraphPanel(QFrame):
             return
         count = len(self._dataset.rows)
         speed = float(self.speed_combo.currentData() or 0.5)
-        step = PLAYBACK_ROWS_PER_SECOND * speed * (self._interval_ms() / 1000.0)
+        step = playback_value_step(speed, self._interval_ms())
+        if self._kind in BAR_KINDS:
+            self._bar_added += step
+            span = self._bar_value_span()
+            if self._bar_added >= span:
+                self._bar_added = span
+                self._paint_growing_bars(span)
+                self._stop_timer()
+                return
+            self._paint_growing_bars(self._bar_added)
+            self._update_playback_label()
+            return
         self._reveal += step
         if self._reveal >= count:
             self._reveal = float(count)
@@ -1529,6 +1732,10 @@ class GraphPanel(QFrame):
     def _paint_smooth(self):
         """Refresh the current graph from _reveal without clearing it first."""
         if self._dataset is None:
+            return
+        if self._kind in BAR_KINDS:
+            self._paint_growing_bars(self._bar_added)
+            self._update_playback_label()
             return
         headers = self._dataset.headers
         rows = self._dataset.rows
@@ -1592,6 +1799,13 @@ class GraphPanel(QFrame):
         self.halt_playback()
         dataset = self._dataset
         if dataset is None or not dataset.rows:
+            return
+        if self._kind in BAR_KINDS:
+            # The shared phase is an amount of value, not a fraction of
+            # this chart's tallest bar. wrap_playhead starts every bar
+            # empty again after that tallest bar is full.
+            self._bar_added = wrap_playhead(phase, self._bar_value_span())
+            self._paint_smooth()
             return
         self._reveal = wrap_playhead(phase, len(dataset.rows))
         self._painted_whole = -1 if self._reveal < 0.001 else self._painted_whole
@@ -1916,8 +2130,7 @@ class ViewAllPage(QWidget):
         its first point. The phase itself is not decreased.
         """
         speed = float(self.speed_combo.currentData() or 0.5)
-        step = PLAYBACK_ROWS_PER_SECOND * speed * (PLAYBACK_FRAME_MS / 1000.0)
-        self._phase += step
+        self._phase += playback_value_step(speed, PLAYBACK_FRAME_MS)
         for panel in self._board.panels():
             panel.paint_loop_frame(self._phase)
 

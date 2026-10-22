@@ -17,6 +17,13 @@ pygraphy = "main:main"
     "example_lake.csv",
     "example_stairs.csv",
     "example_cities.csv",
+    "example_quiz.csv",
+    "example_trails.csv",
+    "example_plants.csv",
+    "example_rain.csv",
+    "example_temperature.csv",
+    "example_tide.csv",
+    "example_snacks.csv",
     "style.qss",
 ]
 
