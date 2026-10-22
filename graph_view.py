@@ -71,6 +71,29 @@ XY_KINDS = ("line", "scatter", "area", "step")
 # About 30 frames a second. Each frame moves a fraction of a row, then returns.
 PLAYBACK_FRAME_MS = 33
 PLAYBACK_ROWS_PER_SECOND = 2.0
+# Extra space around the points, as a fraction of the span on each side.
+FIT_PADDING = 0.08
+# Used when this panel has no numbers left to show.
+NEUTRAL_RANGE = (0.0, 1.0)
+
+
+def _finite_span(low, high):
+    """Return a range that is never a single point.
+
+    A flat series still needs a visible height, or the axis collapses.
+    """
+    if low is None or high is None:
+        return NEUTRAL_RANGE
+    low = float(low)
+    high = float(high)
+    if high < low:
+        low, high = high, low
+    if high == low:
+        extra = 1.0 if low == 0.0 else abs(low) * 0.5
+        if extra == 0.0:
+            extra = 1.0
+        return (low - extra, high + extra)
+    return (low, high)
 
 
 def _palette():
@@ -269,6 +292,9 @@ class GraphPanel(QFrame):
         self.plot.addItem(self.hbar_item)
         self.plot.addItem(self.marker_item)
         self.hbar_item.setVisible(False)
+        # Drag-to-zoom stays on. Auto-range stays off so a later frame,
+        # or another panel, cannot move this view.
+        self.plot.getViewBox().disableAutoRange()
         self.donut = DonutChart()
 
         self.chart_stack = QStackedWidget()
@@ -305,6 +331,7 @@ class GraphPanel(QFrame):
         self._show_kind_page()
         self.set_selected(False)
         self.apply_plot_palette()
+        self.fit_data()
 
     def _build_header(self):
         """Name, graph type, import, and remove. These belong to this panel only."""
@@ -341,9 +368,15 @@ class GraphPanel(QFrame):
         title_row.addWidget(self.name_label)
         title_row.addWidget(self.selected_label)
         title_row.addStretch(1)
+        self.fit_button = QPushButton("Fit data")
+        self.fit_button.setObjectName("fitData")
+        self.fit_button.setToolTip("Zoom this graph so its own rows fill the panel.")
+        self.fit_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.fit_button.clicked.connect(self.fit_data)
         button_row = QHBoxLayout()
         button_row.setSpacing(8)
         button_row.addWidget(import_button, stretch=1)
+        button_row.addWidget(self.fit_button, stretch=1)
         button_row.addWidget(remove_button, stretch=1)
         type_row = QHBoxLayout()
         type_row.setSpacing(8)
@@ -384,6 +417,7 @@ class GraphPanel(QFrame):
         self._kind = kind
         self._show_kind_page()
         self._redraw()
+        self.fit_data()
         self.panel_changed.emit(self)
 
     def _line_edit(self, callback):
@@ -524,6 +558,7 @@ class GraphPanel(QFrame):
         self._reload_controls()
         self._jump_slider_to_end()
         self._redraw()
+        self.fit_data()
 
     def note_rows_changed(self, headers_changed):
         self._stop_timer()
@@ -531,6 +566,7 @@ class GraphPanel(QFrame):
             self._reload_controls()
         self._jump_slider_to_end()
         self._redraw()
+        self.fit_data()
 
     def set_kind(self, kind):
         """Change this panel's graph type. Other panels are not updated."""
@@ -544,6 +580,78 @@ class GraphPanel(QFrame):
             self.type_combo.blockSignals(False)
         self._show_kind_page()
         self._redraw()
+        self.fit_data()
+
+    def fit_data(self):
+        """Zoom this panel so its own rows fill the axes, with a small margin.
+
+        The range comes from every row on this panel, not from the rows
+        revealed so far and not from any other panel. Empty data returns
+        to a neutral range. A donut has no axes, so it is left alone.
+        Dragging the plot still zooms until this is pressed again.
+        """
+        if self._kind == "pie":
+            return
+        x_range, y_range = self._fitted_ranges()
+        self.plot.getViewBox().setRange(
+            xRange=x_range,
+            yRange=y_range,
+            padding=FIT_PADDING,
+        )
+
+    def _fitted_ranges(self):
+        """Axis limits for this panel's full data set."""
+        dataset = self._dataset
+        if dataset is None or not dataset.headers or not dataset.rows:
+            return NEUTRAL_RANGE, NEUTRAL_RANGE
+        headers = dataset.headers
+        rows = dataset.rows
+        if self._kind in XY_KINDS:
+            series = xy_series(
+                headers,
+                rows,
+                self.x_combo.currentText(),
+                self.y_combo.currentText(),
+            )
+            if not series.x_values:
+                return NEUTRAL_RANGE, NEUTRAL_RANGE
+            y_low = min(series.y_values)
+            y_high = max(series.y_values)
+            if self._kind == "area":
+                y_low = min(y_low, 0.0)
+                y_high = max(y_high, 0.0)
+            return (
+                _finite_span(min(series.x_values), max(series.x_values)),
+                _finite_span(y_low, y_high),
+            )
+        if self._kind == "histogram":
+            values, _blank, _missing, _text = numeric_series(
+                headers, rows, self.hist_combo.currentText()
+            )
+            centers, counts, width = histogram_bins(values, self.bin_spin.value())
+            if not centers or not counts:
+                return NEUTRAL_RANGE, NEUTRAL_RANGE
+            half = (width or 0.8) / 2.0
+            return (
+                _finite_span(min(centers) - half, max(centers) + half),
+                _finite_span(0.0, max(counts)),
+            )
+        if self._kind in ("bar", "hbar"):
+            _labels, numbers, _message = category_aggregate(
+                headers,
+                rows,
+                self.bar_category.currentText(),
+                self.bar_value.currentText(),
+                self.bar_how.currentText() or "mean",
+            )
+            if not numbers:
+                return NEUTRAL_RANGE, NEUTRAL_RANGE
+            along = _finite_span(-0.5, len(numbers) - 0.5)
+            across = _finite_span(min(0.0, min(numbers)), max(0.0, max(numbers)))
+            if self._kind == "hbar":
+                return across, along
+            return along, across
+        return NEUTRAL_RANGE, NEUTRAL_RANGE
 
     def _marker_size_changed(self, value):
         self._marker_size = int(value)
@@ -749,20 +857,24 @@ class GraphPanel(QFrame):
     def _axis_changed(self, _text):
         self._remember_from_combos()
         self._redraw()
+        self.fit_data()
 
     def _bins_changed(self, _value):
         self._remember_from_combos()
         self._redraw()
+        self.fit_data()
 
     def _bar_how_changed(self, _text):
         self._remember_from_combos()
         self._show_optional_rows()
         self._redraw()
+        self.fit_data()
 
     def _pie_mode_changed(self, _text):
         self._remember_from_combos()
         self._show_optional_rows()
         self._redraw()
+        self.fit_data()
 
     def _set_row_visible(self, form, field, visible):
         label = form.labelForField(field)
