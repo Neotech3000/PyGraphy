@@ -1,11 +1,15 @@
-"""One graph series, plus record playback.
+"""Graphs and record playback.
 
-Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.
-PyQtGraph has no real pie chart, and PyQt6.QtCharts is not installed here,
-so the donut is drawn with QPainter in DonutChart.
+``GRAPH_KINDS`` is the list of graph types shared by the home page, the
+Graph menu, and each panel's type box. ``GraphPanel`` draws one series of
+one type. ``GraphBoard`` lays several panels in a grid. Each panel owns
+its rows and its own ``QTimer``, so one panel's playback does not move
+another.
 
-GraphBoard lays several GraphPanel widgets in a grid. Each panel owns its
-own rows and its own QTimer. One panel's playback does not move another.
+Line, scatter, area, step, bar, horizontal bar, and histogram use
+PyQtGraph. The plot items are created once and updated with ``setData``
+or ``setOpts``. PyQtGraph has no real pie chart, and ``PyQt6.QtCharts``
+is not installed, so ``DonutChart`` paints the donut with ``QPainter``.
 """
 
 import pyqtgraph as pg
@@ -44,6 +48,21 @@ from dataset import (
 
 pg.setConfigOption("antialias", True)
 
+# Area fills a line down to zero. Step draws the same points as stairs.
+# Horizontal bar uses PyQtGraph's BarGraphItem. Box plots and candlesticks
+# are not listed: PyQtGraph does not draw those from one line or one bar
+# item. Matplotlib and QtCharts are not used.
+# KIND_PAGE must have one entry for every kind, or that type has no controls.
+GRAPH_KINDS = (
+    ("line", "Line"),
+    ("scatter", "Scatter"),
+    ("area", "Area"),
+    ("step", "Step"),
+    ("bar", "Bar"),
+    ("hbar", "Horizontal bar"),
+    ("histogram", "Histogram"),
+    ("pie", "Pie or donut"),
+)
 # Area and step use the same X/Y boxes as line and scatter.
 # Horizontal bar uses the same category boxes as bar.
 KIND_PAGE = {
@@ -56,8 +75,8 @@ KIND_PAGE = {
     "hbar": 2,
     "pie": 3,
 }
-# None means "use the desktop palette." The other entries are named
-# choices for this one panel's marker or revealed line.
+# "theme" is not a QColor, so the panel uses the desktop palette.
+# The other entries are named colors for this one panel's marker or line.
 LOOK_COLORS = (
     ("Theme", "theme"),
     ("Red", QColor(Qt.GlobalColor.red)),
@@ -314,16 +333,7 @@ class GraphPanel(QFrame):
         self.selected_label.setObjectName("pageHint")
         self.type_combo = QComboBox()
         self.type_combo.setObjectName("graphType")
-        for kind, label in (
-            ("line", "Line"),
-            ("scatter", "Scatter"),
-            ("area", "Area"),
-            ("step", "Step"),
-            ("bar", "Bar"),
-            ("hbar", "Horizontal bar"),
-            ("histogram", "Histogram"),
-            ("pie", "Pie or donut"),
-        ):
+        for kind, label in GRAPH_KINDS:
             self.type_combo.addItem(label, kind)
         self.type_combo.currentIndexChanged.connect(self._type_changed)
         import_button = QPushButton("Import table")
@@ -797,6 +807,10 @@ class GraphPanel(QFrame):
             self.chart_stack.setCurrentWidget(self.plot)
 
     def _visible_rows(self):
+        """Rows from the start of the data set through the playback slider.
+
+        The plot uses this prefix. The stats line uses the full data set.
+        """
         if self._dataset is None:
             return []
         limit = self.slider.value()
@@ -1008,7 +1022,12 @@ class GraphPanel(QFrame):
             self.marker_item.setData([], [])
 
     def _draw_xy_moving(self, headers, rows, whole, frac):
-        """Draw a continuous line or scatter, gliding toward the next valid point."""
+        """Draw a continuous line or scatter, gliding toward the next valid point.
+
+        ``whole`` is how many rows are fully included. ``frac`` is the
+        fraction of the way from that row to the next numeric point, so
+        the marker moves between samples instead of jumping.
+        """
         x_name = self.x_combo.currentText()
         y_name = self.y_combo.currentText()
         series = xy_series(headers, rows[:whole], x_name, y_name)
@@ -1128,6 +1147,7 @@ class GraphPanel(QFrame):
         return message
 
     def _redraw_stats(self):
+        """Stats for the whole column. Playback does not shorten this line."""
         if self._dataset is None or not self.stats_column.currentText():
             self.stats_label.setText(
                 "Stats appear after a numeric column has numbers. "

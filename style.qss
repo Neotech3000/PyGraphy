@@ -1,6 +1,6 @@
 /* PyGraphy appearance.
 
-   This is the only styling file. main.py loads it with load_style.
+   This is the only styling file. appearance.py loads it with load_style.
 
    palette(window), palette(window-text), palette(button),
    palette(highlight), palette(highlighted-text), and palette(base)
@@ -13,7 +13,7 @@
    To change spacing, edit padding on the mode buttons or min-height
    on the graph choices. Save the file and start the app again.
    A theme change is picked up while the app is open. load_style in
-   main.py reads this file again then.
+   appearance.py reads this file again then.
 */
 
 QLabel#homeTitle {
