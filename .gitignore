@@ -9,6 +9,10 @@ dist/
 .ruff_cache/
 .mypy_cache/
 
+# Local secrets. Do not publish these.
+.env
+.env.*
+
 # Local editor files. Do not publish these.
 .cursor/
 .vscode/

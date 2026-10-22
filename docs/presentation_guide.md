@@ -29,7 +29,7 @@ Have these four spots ready in the editor:
 
 **3:30 — Record playback.** Press Reset, then Play, then Pause. The marker glides along the original rows and the line stays on screen. Change speed. This timer is not the serial port.
 
-**4:10 — Live serial, without connecting.** Press Microcontroller. Show the port list, baud 115200, Connect, and Disconnect. Read the example on the panel: a header line, then comma-separated rows (`millis,temperature`, then `1000,21.5`). If `ttyACM0` is listed, say you are not opening it in the demo.
+**4:10 — Live serial, without connecting.** Press Microcontroller. Show the port list, baud 115200, Connect, and Disconnect. Read the example on the panel: a header line, then comma-separated rows (`millis,temperature`, then `1000,21.5`). If a port is listed, say you are not opening it in the demo.
 
 **4:40 — The four functions.** Open them in the order below and read one sentence from each. Stop at five minutes even if a question starts. Take questions after.
 
@@ -55,7 +55,7 @@ Have these four spots ready in the editor:
 
 ## Likely questions
 
-**Did you test the board on `ttyACM0`?** No. The panel can list that port. Connect was not used, so this demo does not claim live numbers from that device. A permission failure would mention the dialout group, in `_failure_text`, but that message was not proven against that port.
+**Did you test a connected board?** No. The panel lists whatever ports the computer exposes. Connect was not used, so this demo does not claim live numbers from a device. A permission failure would mention the dialout group, in `_failure_text`, but that message was not proven against a real port.
 
 **Why isn’t the pie a Qt chart?** `PyQt6.QtCharts` is not installed, so the import does not succeed. The assignment said to draw the donut ourselves in that case. `DonutChart` is that drawing.
 

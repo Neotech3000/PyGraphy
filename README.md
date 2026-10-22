@@ -40,7 +40,7 @@ py -m venv .venv
 
 ### How to start it after install
 
-Linux: `pygraphy.desktop` starts the `pygraphy` command from `PATH`. After the install above, put the virtual environment’s `bin` directory on `PATH`, or copy the desktop file and set `Exec` to `.venv/bin/pygraphy` on that computer. You can copy the file to `~/.local/share/applications/`.
+Linux: `pygraphy.desktop` is a template. It starts the `pygraphy` command from `PATH` and does not name a home directory. After the install above, put the virtual environment’s `bin` directory on `PATH`, or copy the file to `~/.local/share/applications/pygraphy.desktop` and set `Exec` to that computer’s `.venv/bin/pygraphy` (and `Path` to the project folder, for example `~/PyGraphy`).
 
 Windows: start PyGraphy by running `.\.venv\Scripts\pygraphy.exe` from the project folder. You can pin that program. A frozen Windows `.exe` is not built here. Build that package on Windows if you want one.
 
@@ -72,7 +72,7 @@ Line, scatter, bar, and histogram use PyQtGraph. The pie is a donut drawn with `
 
 ## Live serial
 
-The panel is labeled Live serial capture. It is separate from Record playback. The baud rate starts at 115200. A board should print a header line, then comma-separated rows, for example `millis,temperature` and then `1000,21.5`. Rows are appended to the active data-set tab. This copy has not been tested by opening `ttyACM0`.
+The panel is labeled Live serial capture. It is separate from Record playback. The baud rate starts at 115200. A board should print a header line, then comma-separated rows, for example `millis,temperature` and then `1000,21.5`. Rows are appended to the active data-set tab. This copy has not been tested by opening a connected board.
 
 ## More documentation
 
