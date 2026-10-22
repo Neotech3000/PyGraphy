@@ -4,15 +4,16 @@
 
    palette(window), palette(window-text), palette(button),
    palette(highlight), palette(highlighted-text), and palette(base)
-   come from the desktop theme. Windows, macOS, and Linux fill those
-   in. Do not type a hex color here. A hex color would stay the same
-   in light mode and dark mode.
+   come from the desktop theme. On Omarchy, main.py fills those roles
+   from the active theme. Other machines keep the light or dark
+   desktop setting. Do not type a hex color here. A hex color would
+   stay the same when the theme changes.
 
    To change a font, edit font-size on QLabel#homeTitle.
    To change spacing, edit padding on the mode buttons or min-height
    on the graph choices. Save the file and start the app again.
-   A light or dark change from the computer is picked up while the
-   app is open. load_style in main.py reads this file again then.
+   A theme change is picked up while the app is open. load_style in
+   main.py reads this file again then.
 */
 
 QLabel#homeTitle {

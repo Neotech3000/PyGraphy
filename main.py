@@ -9,10 +9,21 @@ Records, graphs, and the serial port live in the sibling modules.
 """
 
 import csv
+import os
+import re
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QSortFilterProxyModel, QTimer, pyqtSlot
+from PyQt6.QtCore import (
+    QAbstractTableModel,
+    QFileSystemWatcher,
+    QModelIndex,
+    QObject,
+    Qt,
+    QSortFilterProxyModel,
+    QTimer,
+    pyqtSlot,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -1310,6 +1321,163 @@ def _install_palette(app, palette):
         app.setPalette(QPalette(palette))
 
 
+_COLOR_LINE = re.compile(
+    r"""^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})"""
+)
+_MODE_LINE = re.compile(r"""^\s*mode\s*=\s*["']?(dark|light)\b""", re.IGNORECASE)
+
+
+def omarchy_theme_dir():
+    """Folder Omarchy rewrites when the active theme changes.
+
+    XDG_STATE_HOME wins when it is set. Otherwise the folder is
+    .local/state under the current user's home. Nothing here names
+    one computer's folders.
+    """
+    state_home = os.environ.get("XDG_STATE_HOME")
+    if state_home:
+        root = Path(state_home)
+    else:
+        root = Path.home() / ".local" / "state"
+    return root / "omarchy" / "current" / "theme"
+
+
+def _hex_color(text):
+    color = QColor(text)
+    if not color.isValid():
+        return None
+    return color
+
+
+def read_omarchy_colors():
+    """Read background, text, and accent from the active Omarchy theme.
+
+    The file is colors.toml in omarchy_theme_dir(). Text is the
+    foreground key. Older themes use color0, color7, and color4 for
+    the same three jobs. Returns None when this is not an Omarchy
+    machine or the file has no colors.
+    """
+    path = omarchy_theme_dir() / "colors.toml"
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    found = {}
+    mode = None
+    for line in raw.splitlines():
+        color_match = _COLOR_LINE.match(line)
+        if color_match:
+            found[color_match.group(1)] = color_match.group(2)
+            continue
+        mode_match = _MODE_LINE.match(line)
+        if mode_match:
+            mode = mode_match.group(1).lower()
+    background = _hex_color(found.get("background") or found.get("color0") or "")
+    text = _hex_color(found.get("foreground") or found.get("color7") or "")
+    accent = _hex_color(found.get("accent") or found.get("color4") or "")
+    if background is None or text is None or accent is None:
+        return None
+    return {
+        "background": background,
+        "foreground": text,
+        "accent": accent,
+        "mode": mode,
+    }
+
+
+def _mix_colors(start, end, amount):
+    """Blend start toward end. amount 0 keeps start."""
+    amount = max(0.0, min(1.0, amount))
+    return QColor(
+        int(start.red() + (end.red() - start.red()) * amount),
+        int(start.green() + (end.green() - start.green()) * amount),
+        int(start.blue() + (end.blue() - start.blue()) * amount),
+    )
+
+
+def _text_on(accent, background, text):
+    """Pick background or text, whichever stands out more on accent."""
+    accent_light = accent.lightness()
+    if abs(background.lightness() - accent_light) >= abs(text.lightness() - accent_light):
+        return QColor(background)
+    return QColor(text)
+
+
+def palette_from_omarchy(colors):
+    """Map Omarchy background, text, and accent onto Qt palette roles.
+
+    Edit the role lines in this function to change which Omarchy color
+    paints a part of the window. PyQtGraph reads Base, Text, Highlight,
+    and Accent from this palette. style.qss looks up the same roles
+    with palette().
+    """
+    background = QColor(colors["background"])
+    text = QColor(colors["foreground"])
+    accent = QColor(colors["accent"])
+    button = _mix_colors(background, text, 0.08)
+    alternate = _mix_colors(background, text, 0.14)
+    mid = _mix_colors(background, text, 0.35)
+    quiet = _mix_colors(text, background, 0.45)
+    on_accent = _text_on(accent, background, text)
+    palette = QPalette()
+    groups = (
+        QPalette.ColorGroup.Active,
+        QPalette.ColorGroup.Inactive,
+        QPalette.ColorGroup.Disabled,
+    )
+    for group in groups:
+        disabled = group == QPalette.ColorGroup.Disabled
+        ink = quiet if disabled else text
+        palette.setColor(group, QPalette.ColorRole.Window, background)
+        palette.setColor(group, QPalette.ColorRole.WindowText, ink)
+        palette.setColor(group, QPalette.ColorRole.Base, background)
+        palette.setColor(group, QPalette.ColorRole.AlternateBase, alternate)
+        palette.setColor(group, QPalette.ColorRole.Text, ink)
+        palette.setColor(group, QPalette.ColorRole.Button, button)
+        palette.setColor(group, QPalette.ColorRole.ButtonText, ink)
+        palette.setColor(group, QPalette.ColorRole.Highlight, accent)
+        palette.setColor(group, QPalette.ColorRole.HighlightedText, on_accent)
+        palette.setColor(group, QPalette.ColorRole.Accent, accent)
+        palette.setColor(group, QPalette.ColorRole.ToolTipBase, button)
+        palette.setColor(group, QPalette.ColorRole.ToolTipText, text)
+        palette.setColor(group, QPalette.ColorRole.PlaceholderText, quiet)
+        palette.setColor(group, QPalette.ColorRole.Link, accent)
+        palette.setColor(group, QPalette.ColorRole.Light, alternate)
+        palette.setColor(group, QPalette.ColorRole.Mid, mid)
+        palette.setColor(group, QPalette.ColorRole.Dark, _mix_colors(background, text, 0.55))
+        palette.setColor(group, QPalette.ColorRole.Shadow, background)
+    return palette
+
+
+def apply_omarchy_palette(app):
+    """Use the Omarchy theme when colors.toml is present.
+
+    Returns False on machines that are not Omarchy so the caller can
+    keep the freedesktop light/dark behavior.
+    """
+    global _color_scheme_overridden
+    colors = read_omarchy_colors()
+    if colors is None:
+        return False
+    mode = colors.get("mode")
+    if mode == "light":
+        scheme = Qt.ColorScheme.Light
+    elif mode == "dark":
+        scheme = Qt.ColorScheme.Dark
+    elif colors["background"].lightness() >= 128:
+        scheme = Qt.ColorScheme.Light
+    else:
+        scheme = Qt.ColorScheme.Dark
+    hints = app.styleHints()
+    if hints.colorScheme() != scheme:
+        hints.setColorScheme(scheme)
+        _color_scheme_overridden = True
+    _install_palette(app, palette_from_omarchy(colors))
+    return True
+
+
 def remember_desktop_palette(app):
     """Save the startup palette so a return to that scheme can restore it."""
     global _desktop_palette, _desktop_scheme
@@ -1482,14 +1650,41 @@ class _DesktopSchemeWatcher(QObject):
             return None
 
 
+class _OmarchyThemeWatcher(QObject):
+    """Re-read colors.toml when Omarchy writes a new theme."""
+
+    def __init__(self, app, window):
+        super().__init__(app)
+        self._app = app
+        self._window = window
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.fileChanged.connect(self._changed)
+        self._watcher.directoryChanged.connect(self._changed)
+        self._arm()
+
+    def _arm(self):
+        """Watch the theme folder and colors.toml. A replaced file needs a new watch."""
+        theme_dir = omarchy_theme_dir()
+        colors = theme_dir / "colors.toml"
+        if theme_dir.is_dir():
+            self._watcher.addPath(str(theme_dir))
+        if colors.is_file():
+            self._watcher.addPath(str(colors))
+
+    def _changed(self, _path):
+        self._arm()
+        _restyle_after_scheme_change(self._app, self._window)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("PyGraphy")
     # Leave the platform style alone so Windows, macOS, and Linux
     # use the desktop theme. Do not call setStyle("Fusion").
     remember_desktop_palette(app)
-    apply_system_color_scheme(app)
-    sync_palette_to_color_scheme(app)
+    if not apply_omarchy_palette(app):
+        apply_system_color_scheme(app)
+        sync_palette_to_color_scheme(app)
     load_style(app)
     window = PyGraphyWindow()
     hints = app.styleHints()
@@ -1497,8 +1692,9 @@ def main():
         hints.colorSchemeChanged.connect(
             lambda *_args: _restyle_after_scheme_change(app, window)
         )
-    # Kept on the window so the portal listener is not thrown away.
+    # Kept on the window so the listeners are not thrown away.
     window._scheme_watcher = _DesktopSchemeWatcher(app, window)
+    window._omarchy_watcher = _OmarchyThemeWatcher(app, window)
     window.show()
     return app.exec()
 
@@ -1522,9 +1718,13 @@ def _restyle_after_scheme_change(app, window):
     def apply_when_ready():
         global _restyle_queued
         _restyle_queued = False
-        sync_palette_to_color_scheme(app)
-        load_style(app)
-        sync_palette_to_color_scheme(app)
+        if apply_omarchy_palette(app):
+            load_style(app)
+        else:
+            apply_system_color_scheme(app)
+            sync_palette_to_color_scheme(app)
+            load_style(app)
+            sync_palette_to_color_scheme(app)
         board = getattr(window, "graph_board", None)
         if board is not None:
             board.apply_plot_palette()

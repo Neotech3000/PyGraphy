@@ -86,7 +86,7 @@ After you explain, give me one small edit I can make myself, and say which funct
 
 ## What I will paste next
 
-: under this prompt, paste the full text of these four files, in this order, each in its own code block:
+You: under this prompt, paste the full text of these four files, in this order, each in its own code block:
 
 1. `main.py`
 2. `dataset.py`

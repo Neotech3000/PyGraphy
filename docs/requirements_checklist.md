@@ -5,7 +5,7 @@ Each row is something the assignment asked for, the file that implements it, and
 Run:
 
 ```bash
-cd . && ./.venv/bin/python main.py
+./.venv/bin/python main.py
 ```
 
 ## Official PDF “Must include”

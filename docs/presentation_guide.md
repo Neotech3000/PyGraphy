@@ -3,7 +3,7 @@
 Practice once with the sample file before you present. You do not need a board.
 
 ```bash
-cd . && ./.venv/bin/python main.py
+./.venv/bin/python main.py
 ```
 
 Have these four spots ready in the editor:

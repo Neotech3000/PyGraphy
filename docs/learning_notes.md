@@ -3,7 +3,7 @@
 These notes match the code in this folder. Run the window with:
 
 ```bash
-cd . && ./.venv/bin/python main.py
+./.venv/bin/python main.py
 ```
 
 ## Signals and slots
@@ -76,7 +76,7 @@ In the app, use File → Load sample CSV and look at the stats line for `tempera
 Then, from the project folder, ask that function what it does with too few numbers:
 
 ```bash
-cd . && ./.venv/bin/python -c "from dataset import sample_standard_deviation; print(sample_standard_deviation([21.5]))"
+./.venv/bin/python -c "from dataset import sample_standard_deviation; print(sample_standard_deviation([21.5]))"
 ```
 
 The print should be `None`. That is the `if count < 2` branch. One temperature is a real measurement, and it still has no sample standard deviation until a second number exists.

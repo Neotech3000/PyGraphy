@@ -3,7 +3,7 @@
 Run the app with:
 
 ```bash
-cd . && ./.venv/bin/python main.py
+./.venv/bin/python main.py
 ```
 
 The window starts in `main()`. That function builds a `QApplication`, creates `PyGraphyWindow`, shows it, and calls `app.exec()` to start the event loop.

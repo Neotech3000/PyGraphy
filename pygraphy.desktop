@@ -2,7 +2,6 @@
 Type=Application
 Name=PyGraphy
 Comment=Graph a table from a local CSV
-Exec=./.venv/bin/pygraphy
-Path=.
+Exec=pygraphy
 Terminal=false
 Categories=Education;Science;

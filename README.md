@@ -36,18 +36,11 @@ py -m venv .venv
 .\.venv\Scripts\pygraphy.exe
 ```
 
-### This Linux machine
-
-```bash
-cd . && ./.venv/bin/python -m pip install .
-./.venv/bin/pygraphy
-```
-
 `./.venv/bin/python main.py` from the project folder still works.
 
 ### How to start it after install
 
-Linux: `pygraphy.desktop` in this folder runs `./.venv/bin/pygraphy`. On another computer, change `Exec` and `Path` to that computer’s project folder before you open the file. You can also copy it to `~/.local/share/applications/`.
+Linux: `pygraphy.desktop` starts the `pygraphy` command from `PATH`. After the install above, put the virtual environment’s `bin` directory on `PATH`, or copy the desktop file and set `Exec` to `.venv/bin/pygraphy` on that computer. You can copy the file to `~/.local/share/applications/`.
 
 Windows: start PyGraphy by running `.\.venv\Scripts\pygraphy.exe` from the project folder. You can pin that program. A frozen Windows `.exe` is not built here. Build that package on Windows if you want one.
 
@@ -66,6 +59,8 @@ Or, without the installed command:
 ```
 
 ## What the window does
+
+On Omarchy, the window uses the active theme’s background, text, and accent, and it updates when that theme file changes. On other computers it follows the desktop light or dark setting.
 
 Every launch opens an empty data table and an empty graph. The status bar says “No data set” and “0 rows”. The sample file stays closed until you choose File → Load sample CSV. **Clear table** sits on the data table, above the grid. File, Graph, and Help are the menus. All graph types offers Line, Scatter, Bar, Histogram, and Pie or donut. Each data-set tab keeps its own rows. The status bar shows the data-set name, the row count, and whether USB serial is connected. Closing the window does not write a session file.
 
