@@ -44,6 +44,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QStatusBar,
     QTableView,
+    QTabBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -473,6 +474,22 @@ class PyGraphyWindow(QMainWindow):
         controls.addWidget(add_row)
         controls.addWidget(delete_row)
 
+        # This row stays at the top of Manual entry. It is not inside the
+        # graph-page divider, so dragging that divider cannot slide it.
+        self.manual_tables_label = QLabel("Tables")
+        self.manual_tables_label.setObjectName("sectionLabel")
+        self.manual_switcher = QTabBar()
+        self.manual_switcher.setObjectName("manualTableTabs")
+        self.manual_switcher.setDocumentMode(True)
+        self.manual_switcher.setExpanding(False)
+        self.manual_switcher.setDrawBase(False)
+        self.manual_switcher.setUsesScrollButtons(True)
+        self.manual_switcher.currentChanged.connect(self._manual_switcher_changed)
+        switch_row = QHBoxLayout()
+        switch_row.setSpacing(12)
+        switch_row.addWidget(self.manual_tables_label)
+        switch_row.addWidget(self.manual_switcher, stretch=1)
+
         self.manual_table = QTableView()
         self.manual_table.setObjectName("manualTable")
         self.manual_table.setAlternatingRowColors(True)
@@ -499,6 +516,7 @@ class PyGraphyWindow(QMainWindow):
         layout.setSpacing(14)
         layout.addWidget(self.manual_caption)
         layout.addWidget(tools)
+        layout.addLayout(switch_row)
         layout.addWidget(self.manual_empty)
         layout.addWidget(self.manual_table, stretch=1)
         return page
@@ -980,18 +998,20 @@ class PyGraphyWindow(QMainWindow):
             except TypeError:
                 pass
             self._manual_model = None
+        self._refresh_manual_switcher()
         tab = self._current_tab()
         if tab is None:
             self.manual_table.setModel(None)
             self.manual_empty.setText(
-                "No data set is open. Next: press Add table, then type a column name "
-                "and press Add column."
+                "No data set is open. Next: press Add table. "
+                "A second press adds another empty table. "
+                "The Tables tabs switch which one the grid shows."
             )
             self.manual_empty.setVisible(True)
             self.manual_caption.setText(
-                "Type a small table. The cells are the same data set the graph uses. "
-                "They stay in memory for this tab. Closing PyGraphy does not write a hidden file. "
-                "File → Export records as CSV saves them when you ask."
+                "Press Add table. Each table stays with its own graph. "
+                "Adding one does not copy another table's cells. "
+                "The Tables tabs sit under Table tools and do not move with the graph divider."
             )
             return
         self._manual_model = tab.model
@@ -1005,14 +1025,75 @@ class PyGraphyWindow(QMainWindow):
             )
             self.manual_empty.setVisible(True)
         self.manual_caption.setText(
-            f"Editing {tab.dataset.name} in memory. "
-            "These cells are the same rows the graph uses. "
+            f"Editing {tab.dataset.name}. The Tables tabs switch tables. "
+            "The grid shows only this one. "
+            "These cells are the same rows its graph uses. "
             "Closing PyGraphy does not write a hidden file. "
             "File → Export records as CSV saves them when you ask."
         )
+        if self._mode == "manual":
+            self._focus_manual_cell()
+
+    def _manual_tables(self):
+        tables = []
+        for index in range(self.tabs.count()):
+            tab = self.tabs.widget(index)
+            if isinstance(tab, DataSetTab):
+                tables.append(tab)
+        return tables
+
+    def _refresh_manual_switcher(self):
+        """Rebuild the Manual entry tabs from the open tables.
+
+        Signals stay blocked so rebuilding does not switch graphs.
+        """
+        tables = self._manual_tables()
+        current = self._current_tab()
+        bar = self.manual_switcher
+        bar.blockSignals(True)
+        while bar.count():
+            bar.removeTab(0)
+        selected = -1
+        for index, tab in enumerate(tables):
+            bar.addTab(tab.dataset.name)
+            if tab is current:
+                selected = index
+        bar.setCurrentIndex(selected)
+        bar.blockSignals(False)
+
+    def _manual_switcher_changed(self, index):
+        """Show the table named by the Tables tab. Leave the other cells alone."""
+        tables = self._manual_tables()
+        if index < 0 or index >= len(tables):
+            return
+        tab = tables[index]
+        panel = self.graph_board.panel_for_tab(tab)
+        if panel is not None and panel is not self._panel():
+            self.graph_board.select_panel(panel)
+            return
+        self._bind_manual_view()
+
+    def _screen_manual_tab(self):
+        """The table whose cells are in the Manual entry grid right now."""
+        model = self.manual_table.model()
+        if model is None:
+            return None
+        for tab in self._manual_tables():
+            if tab.model is model:
+                return tab
+        return None
+
+    def _focus_manual_cell(self):
+        """Put the cursor on the first cell so typing goes into this table."""
+        model = self.manual_table.model()
+        if model is None or model.rowCount() < 1 or model.columnCount() < 1:
+            return
+        index = model.index(0, 0)
+        self.manual_table.setCurrentIndex(index)
+        self.manual_table.scrollTo(index)
 
     def _on_manual_edited(self, _top_left, _bottom_right, _roles=None):
-        tab = self._current_tab()
+        tab = self._screen_manual_tab() or self._current_tab()
         if tab is None:
             return
         self._refresh_panel(tab, False)
@@ -1032,18 +1113,23 @@ class PyGraphyWindow(QMainWindow):
     def _add_manual_table(self):
         """Open a new empty table and stay on Manual entry.
 
-        The new table does not copy another table's rows. Add column,
-        Add row, and Delete row then apply to this table.
+        The new table does not copy another table's rows. It starts with
+        one blank cell so it can be typed in. Add column, Add row, and
+        Delete row then apply to the table on screen.
         """
         panel = self.graph_board.add_panel()
         dataset = DataSet(panel.name)
+        dataset.add_column("column")
+        dataset.add_blank_row()
         self._add_tab(dataset, panel)
         panel.show_dataset(dataset)
+        self._set_mode("manual")
         self._bind_manual_view()
         self._update_status()
         self._set_notice(
             f"Added an empty table on {panel.name}. "
-            "Other tables were not copied. Type a column name, then press Add column."
+            "Other tables were not copied. Click a Tables tab to switch. "
+            "Type in the blank cell, or add a column."
         )
 
     def _manual_tab(self):
@@ -1059,7 +1145,9 @@ class PyGraphyWindow(QMainWindow):
         if not name:
             self._show_error("Type a column name, then press Add column.")
             return
-        tab = self._manual_tab()
+        tab = self._screen_manual_tab()
+        if tab is None:
+            tab = self._manual_tab()
         added = tab.dataset.add_column(name)
         self.column_name_edit.clear()
         tab.refresh_table()
@@ -1072,7 +1160,7 @@ class PyGraphyWindow(QMainWindow):
         )
 
     def _add_manual_row(self):
-        tab = self._current_tab()
+        tab = self._screen_manual_tab() or self._current_tab()
         if tab is None or not tab.dataset.headers:
             self._show_error("Add a column name before adding a row.")
             return
@@ -1086,7 +1174,7 @@ class PyGraphyWindow(QMainWindow):
         self._set_notice(f"Added a blank row to {tab.dataset.name}. Type the cell values.")
 
     def _delete_manual_row(self):
-        tab = self._current_tab()
+        tab = self._screen_manual_tab() or self._current_tab()
         if tab is None:
             self._show_error("Open a data set before deleting a row.")
             return
@@ -1280,6 +1368,7 @@ class PyGraphyWindow(QMainWindow):
             "Drag the divider between the table and the graphs to resize them.\n\n"
             "Graph mode shows the graphs and, from All graph types, the home page.\n"
             "Manual entry edits the table you are looking at. Add table starts an empty one.\n"
+            "The Tables tabs on that page switch tables. The grid shows only the selected one.\n"
             "Microcontroller mode holds the serial controls, Copy graph, and Copy table.\n\n"
             "Line, scatter, area, step, bar, horizontal bar, and histogram use PyQtGraph.\n"
             "Pie or donut is drawn with QPainter. PyQtGraph does not draw "

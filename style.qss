@@ -81,6 +81,18 @@ QPushButton[graphChoice="true"] {
     padding: 16px;
 }
 
+QTabBar#manualTableTabs::tab {
+    padding: 6px 14px;
+    margin-right: 6px;
+    color: palette(window-text);
+    background: palette(button);
+}
+
+QTabBar#manualTableTabs::tab:selected {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+}
+
 QLabel#noticeLabel {
     color: palette(window-text);
     padding: 4px 0;
