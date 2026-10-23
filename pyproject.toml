@@ -26,6 +26,9 @@ pygraphy = "main:main"
     "example_snacks.csv",
     "style.qss",
     "assets/logo/pygraphy-icon.svg",
+    "assets/logo/pygraphy-icon-light.svg",
+    "assets/logo/pygraphy-lockup-dark.svg",
+    "assets/logo/pygraphy-lockup-light.svg",
     "assets/logo/pygraphy-icon-256.png",
 ]
 
