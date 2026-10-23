@@ -58,6 +58,7 @@ from appearance import (
 )
 from dataset import (
     DataSet,
+    adopt_header_of,
     load_csv,
     load_delimited_text,
     load_table,
@@ -365,7 +366,7 @@ class PyGraphyWindow(QMainWindow):
         self.setMinimumSize(860, 560)
         self._kind = "line"
         self._mode = "graph"
-        self._serial_hold = False
+        self._serial_header = None
         self._manual_model = None
 
         self.home = HomePage(self._choose_kind)
@@ -1108,7 +1109,6 @@ class PyGraphyWindow(QMainWindow):
         self._update_status()
 
     def _tab_changed(self, _index):
-        self._serial_hold = False
         tab = self.tabs.currentWidget()
         panel = self.graph_board.panel_for_tab(tab) if isinstance(tab, DataSetTab) else None
         if panel is not None and panel is not self._panel():
@@ -1372,12 +1372,13 @@ class PyGraphyWindow(QMainWindow):
         )
 
     def _on_serial_header(self, cells):
-        """Accept a header that matches the selected data set.
+        """Remember a header line and match it to the selected data set.
 
-        A different header sets a hold. Later rows are skipped until a
-        matching header arrives, the selected graph changes, or the port
-        disconnects. Two shapes of data are not mixed in one tab.
+        The header line is kept for as long as the port is open. A later
+        row is only added to a data set that has the same columns, so one
+        stream never lands in two shapes of data.
         """
+        self._serial_header = [cell.strip() for cell in cells]
         panel = self._target_panel()
         if panel.tab is None:
             self._add_tab(DataSet(panel.name), panel)
@@ -1386,20 +1387,42 @@ class PyGraphyWindow(QMainWindow):
         before = list(tab.dataset.headers)
         message = tab.dataset.adopt_header(cells)
         if message:
-            self._serial_hold = True
             self.serial_panel.show_notice(message)
             self._set_notice(message)
             return
-        self._serial_hold = False
         tab.refresh_table()
         self._refresh_panel(tab, tab.dataset.headers != before)
         self._update_status()
         self.serial_panel.show_notice(f"Connected. Columns: {', '.join(tab.dataset.headers)}.")
 
+    def _serial_columns_fit(self):
+        """True when the selected data set can take a row from the device.
+
+        A data set with no columns yet takes the device's header, so a
+        fresh graph can receive rows. A data set that already has
+        different columns does not, so a row is never stored under the
+        wrong headings.
+        """
+        if self._serial_header is None:
+            return True
+        tab = self._current_tab()
+        if tab is None:
+            return False
+        if list(tab.dataset.headers) == adopt_header_of(self._serial_header):
+            return True
+        if tab.dataset.headers:
+            return False
+        tab.dataset.adopt_header(self._serial_header)
+        tab.refresh_table()
+        self._refresh_panel(tab, True)
+        return True
+
     def _on_serial_row(self, cells):
-        """Append one serial row to the selected data set, unless a hold is set."""
-        if self._serial_hold:
-            self.serial_panel.show_notice("Skipped a row because the header did not match.")
+        """Append one serial row to the selected data set, unless it does not fit."""
+        if not self._serial_columns_fit():
+            self.serial_panel.show_notice(
+                "Skipped a row because the selected data set has different columns."
+            )
             return
         tab = self._current_tab()
         if tab is None:
@@ -1416,7 +1439,7 @@ class PyGraphyWindow(QMainWindow):
     def _on_link_changed(self, text):
         self.link_status.setText(text)
         if text == "Disconnected":
-            self._serial_hold = False
+            self._serial_header = None
 
     def _export_png(self):
         panel = self._panel()

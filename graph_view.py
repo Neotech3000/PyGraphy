@@ -15,6 +15,8 @@ with ``setData`` or ``setOpts``. PyQtGraph has no real pie chart, and
 with ``QPainter``.
 """
 
+import math
+
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QImage, QPainter, QPalette, QPen
@@ -361,6 +363,14 @@ class DonutChart(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        try:
+            self._paint(painter)
+        finally:
+            # The painter is always ended, even when a value is bad.
+            painter.end()
+
+    def _paint(self, painter):
+        """Draw the donut. The caller ends the painter."""
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         background = _role_color(QPalette.ColorRole.Window)
         ink = _role_color(QPalette.ColorRole.Text)
@@ -389,7 +399,6 @@ class DonutChart(QWidget):
                 int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignCenter),
                 self._message,
             )
-            painter.end()
             return
 
         total = sum(self._values) or 1
@@ -404,7 +413,10 @@ class DonutChart(QWidget):
             if index == len(self._values) - 1:
                 span = remaining
             else:
-                span = int(round(value / total * 360 * 16))
+                share = value / total
+                if not math.isfinite(share):
+                    share = 0.0
+                span = int(round(share * 360 * 16))
                 remaining -= span
             color = slice_color(index)
             painter.setBrush(QBrush(color))
@@ -430,6 +442,8 @@ class DonutChart(QWidget):
             painter.drawRect(legend_x, legend_y, 12, 12)
             painter.setPen(ink)
             percent = value / total * 100
+            if not math.isfinite(percent):
+                percent = 0.0
             painter.drawText(
                 legend_x + 18,
                 legend_y + 11,
@@ -440,7 +454,6 @@ class DonutChart(QWidget):
                 break
         if self._message:
             painter.drawText(16, self.height() - 8, self._message)
-        painter.end()
 
 
 class GraphPanel(QFrame):
@@ -988,6 +1001,12 @@ class GraphPanel(QFrame):
             self._fill(self.stats_column, [])
             self._column_signature = None
             return
+        # Fill in the default X and Y columns before the combos are filled.
+        # A serial header arrives before any rows, so the data set has no
+        # numeric columns yet and its choices are still empty. Without this
+        # both combos fall back to the first numeric column and the graph
+        # plots that column against itself.
+        dataset.prefer_default_columns()
         numbers = numeric_column_names(dataset.headers, dataset.rows)
         names = list(dataset.headers)
         self._fill(self.x_combo, numbers, dataset.view["x"])

@@ -74,6 +74,8 @@ python3 -m venv .venv
 
 `requirements.txt` pins the versions. `pip install .` adds the `pygraphy` command and copies `sample_data.csv` and `style.qss` into the virtual environment. You can skip `pip install .` and start with `.venv/bin/python main.py` instead.
 
+The two files answer different questions and are kept apart on purpose. `requirements.txt` holds the exact versions that were tested, so a repeatable install gives the same program every time. `pyproject.toml` holds the lowest versions that work, so a fresh install can pick up newer ones. Use `pip install -r requirements.txt` when you want the tested set.
+
 If `python3 -m venv` says that ensurepip is not available, install the distro package that provides the venv module (on Debian and Ubuntu, `python3-venv`), delete the incomplete `.venv` folder, and run the command again.
 
 ### Windows
@@ -157,7 +159,7 @@ The columns are `time_s`, `temperature_c`, `humidity_pct`, and `location`. Twelv
 
 ## Live serial
 
-The panel is separate from Record playback. The baud choices are 9600, 19200, 38400, 57600, 115200, and 230400. The box starts at 115200. Connect opens your serial port for read and write and releases DTR so a typical board can leave reset.
+The panel is separate from Record playback. The baud choices are 9600, 19200, 38400, 57600, 115200, and 230400. The box starts at 115200. Connect opens your serial port for read and write and asserts the data terminal ready (DTR) line. PyGraphy does not hold that line low. Some boards reset when the line changes, so check your own board before you rely on it.
 
 The first complete line is the column header. Later lines are comma-separated values. They are stored as text, same as a CSV. If the header does not match the selected data set, PyGraphy sets a hold and skips following rows instead of mixing two shapes of data. Switching graphs, or Disconnect, clears that hold.
 
