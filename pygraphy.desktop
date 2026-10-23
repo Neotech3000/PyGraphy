@@ -3,9 +3,15 @@
 # Exec is the pygraphy command on PATH. To point at one checkout instead:
 #   Exec=~/PyGraphy/.venv/bin/pygraphy
 #   Path=~/PyGraphy
+# Linux icon install:
+# mkdir -p ~/.local/share/icons/hicolor/256x256/apps
+# cp assets/logo/pygraphy-icon-256.png ~/.local/share/icons/hicolor/256x256/apps/pygraphy.png
+# cp pygraphy.desktop ~/.local/share/applications/
+# gtk-update-icon-cache ~/.local/share/icons/hicolor 2>/dev/null || true
 [Desktop Entry]
 Type=Application
 Name=PyGraphy
+Icon=pygraphy
 Comment=Graph a table from a local CSV
 Exec=pygraphy
 Terminal=false

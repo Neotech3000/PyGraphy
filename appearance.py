@@ -644,6 +644,9 @@ def _restyle_after_scheme_change(app, window):
         board = getattr(window, "graph_board", None)
         if board is not None:
             board.apply_plot_palette()
+        refresh_icon = getattr(window, "refresh_window_icon", None)
+        if refresh_icon is not None:
+            refresh_icon()
 
     QTimer.singleShot(0, apply_when_ready)
 

@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QButtonGroup,
+    QDialog,
     QFileDialog,
     QGridLayout,
     QGroupBox,
@@ -45,7 +46,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtGui import QAction, QActionGroup
+from PyQt6.QtGui import QAction, QActionGroup, QIcon, QPalette
 
 from appearance import (
     _DesktopSchemeWatcher,
@@ -68,6 +69,51 @@ from dataset import (
 )
 from graph_view import GRAPH_KINDS, GraphBoard, build_view_all_page
 from serial_panel import SerialPanel
+
+
+def _bundled_logo(filename):
+    """Find one logo file shipped with PyGraphy.
+
+    Look in assets/logo beside this source file first. After
+    ``pip install .``, packaged icons are in share/pygraphy.
+    """
+    beside = Path(__file__).resolve().parent / "assets" / "logo" / filename
+    if beside.is_file():
+        return beside
+    return Path(sys.prefix) / "share" / "pygraphy" / filename
+
+
+def _icon_path(light=False):
+    """Window icon path. A light desktop uses the light file.
+
+    Neither file is recolored. A missing light file falls back to the
+    dark master. The caller skips the icon when this path is not a file.
+    """
+    if light:
+        light_path = _bundled_logo("pygraphy-icon-light.svg")
+        if light_path.is_file():
+            return light_path
+    return _bundled_logo("pygraphy-icon.svg")
+
+
+def _lockup_path(light):
+    """Lockup that matches the desktop. Missing art returns None."""
+    name = "pygraphy-lockup-light.svg" if light else "pygraphy-lockup-dark.svg"
+    path = _bundled_logo(name)
+    if path.is_file():
+        return path
+    return None
+
+
+def _desktop_is_light(app):
+    """True when the desktop scheme, or the window color, is light."""
+    scheme = app.styleHints().colorScheme()
+    if scheme == Qt.ColorScheme.Light:
+        return True
+    if scheme == Qt.ColorScheme.Dark:
+        return False
+    window = app.palette().color(QPalette.ColorRole.Window)
+    return window.lightness() >= 128
 
 
 # Each example is a CSV beside the program, a menu label, a graph type,
@@ -314,6 +360,7 @@ class PyGraphyWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PyGraphy")
+        self.refresh_window_icon()
         self.resize(1100, 700)
         self.setMinimumSize(860, 560)
         self._kind = "line"
@@ -1452,10 +1499,32 @@ class PyGraphyWindow(QMainWindow):
     def _show_error(self, text):
         QMessageBox.warning(self, "PyGraphy", text)
 
+    def refresh_window_icon(self):
+        """Use the dark or light PyGraphy icon. A missing file does nothing."""
+        app = QApplication.instance()
+        if app is None:
+            return
+        path = _icon_path(_desktop_is_light(app))
+        if not path.is_file():
+            return
+        icon = QIcon(str(path))
+        if icon.isNull():
+            return
+        app.setWindowIcon(icon)
+        self.setWindowIcon(icon)
+
     def _about(self):
-        QMessageBox.about(
-            self,
-            "About PyGraphy",
+        app = QApplication.instance()
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About PyGraphy")
+        layout = QVBoxLayout(dialog)
+        lockup = _lockup_path(_desktop_is_light(app)) if app is not None else None
+        if lockup is not None:
+            picture = QLabel()
+            picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            picture.setPixmap(QIcon(str(lockup)).pixmap(420, 140))
+            layout.addWidget(picture)
+        body = QLabel(
             "PyGraphy plots one series on each comparison graph.\n\n"
             "The window starts with no rows. Nothing is saved when you close it.\n"
             "Add graph puts another graph beside the others. Each one has its own rows.\n"
@@ -1488,8 +1557,18 @@ class PyGraphyWindow(QMainWindow):
             "Record playback only replays rows already in the active data set. "
             "Copy graph is a still picture of the current graph type, not live acquisition.\n\n"
             "Sorting the graph table does not change the row order used for the graph. "
-            "Sample standard deviation divides by n-1.",
+            "Sample standard deviation divides by n-1."
         )
+        body.setTextFormat(Qt.TextFormat.PlainText)
+        body.setWordWrap(True)
+        layout.addWidget(body)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        row.addWidget(close_button)
+        layout.addLayout(row)
+        dialog.exec()
 
     def closeEvent(self, event):
         self.serial_panel.disconnect_port()
@@ -1499,6 +1578,9 @@ class PyGraphyWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("PyGraphy")
+    icon_path = _icon_path(False)
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
     # Linux keeps the platform style so the desktop theme can paint the
     # window. apply_active_palette switches Windows and macOS to Fusion,
     # because those native styles ignore palette roles.
@@ -1506,6 +1588,7 @@ def main():
     apply_active_palette(app)
     load_style(app)
     window = PyGraphyWindow()
+    window.refresh_window_icon()
     hints = app.styleHints()
     if hasattr(hints, "colorSchemeChanged"):
         hints.colorSchemeChanged.connect(

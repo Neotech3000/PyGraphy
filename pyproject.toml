@@ -25,6 +25,8 @@ pygraphy = "main:main"
     "example_tide.csv",
     "example_snacks.csv",
     "style.qss",
+    "assets/logo/pygraphy-icon.svg",
+    "assets/logo/pygraphy-icon-256.png",
 ]
 
 [build-system]

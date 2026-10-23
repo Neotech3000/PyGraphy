@@ -1,4 +1,9 @@
-# PyGraphy
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/pygraphy-lockup-dark.svg">
+    <img src="assets/logo/pygraphy-lockup-light.svg" alt="PyGraphy" width="420">
+  </picture>
+</p>
 
 A PyQt6 graphing application. It plots one series on each graph from a table you load, type, or capture over USB serial.
 
